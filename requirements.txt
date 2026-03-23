@@ -1,0 +1,12 @@
+streamlit
+numpy
+pandas
+scipy
+scikit-learn
+plotly
+streamlit-aggrid
+folium
+streamlit-folium
+openpyxl
+requests
+supabase
