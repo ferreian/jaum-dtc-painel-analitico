@@ -410,6 +410,10 @@ def calcular_lsd(df, col="kg_ha", fator="dePara", bloco="cod_fazenda", alpha=0.0
         return np.nan
 
 
+# ── LSD calculado UMA VEZ aqui — reutilizado em todas as seções ───────────────
+_lsd_apres = calcular_lsd(ta_filtrado, col="kg_ha")
+
+
 # ════════════════════════════════════════════════════════════════════════════════
 # SEÇÃO 2 — DESCRITIVA GERAL DO CONJUNTO
 # ════════════════════════════════════════════════════════════════════════════════
@@ -450,7 +454,7 @@ for col, label in vars_desc.items():
     dp    = serie.std()
     cv    = round(dp / media * 100, 2) if media > 0 else np.nan
     q1, q2, q3 = serie.quantile([0.25, 0.50, 0.75])
-    lsd_kg = calcular_lsd(ta_filtrado)
+    lsd_kg = _lsd_apres
     if col == "kg_ha":
         lsd = round(lsd_kg, 1) if isinstance(lsd_kg, (int, float)) and not np.isnan(lsd_kg) else "—"
     elif col == "sc_ha":
@@ -760,11 +764,25 @@ for _cultivar, _grp in ta_filtrado.groupby("dePara", dropna=True):
 
 df_apres = pd.DataFrame(_apres_rows)
 if not df_apres.empty:
+    # Manter apenas cultivares com sc/ha válido — garante que lollipop e tabela mostrem os mesmos materiais
+    df_apres = df_apres[df_apres["sc/ha"].notna() & (df_apres["sc/ha"] > 0)]
     df_apres = df_apres.sort_values("sc/ha", ascending=False).reset_index(drop=True)
 
-# ── LSD pré-calculado (usado no lollipop e na tabela) ─────────────────────────
-_lsd_apres = calcular_lsd(ta_filtrado, col="kg_ha")
+# ── LSD — calculado UMA VEZ, compartilhado pelo lollipop e pela tabela ────────
+# _lsd_apres já calculado acima (linha 414)
 lsd_sc = round(_lsd_apres / 60, 2) if isinstance(_lsd_apres, (int, float)) and not np.isnan(_lsd_apres) else None
+
+# ── Linhas de corte — calculadas UMA VEZ, usadas no lollipop e na tabela ──────
+_sc_ordenado   = df_apres.sort_values("sc/ha", ascending=False)["sc/ha"].tolist()
+_cult_ordenado = df_apres.sort_values("sc/ha", ascending=False)["Cultivar"].tolist()
+linhas_corte = set()   # índices 0-based de df_apres onde cai o corte
+if lsd_sc and len(_sc_ordenado) > 1:
+    _lider = _sc_ordenado[0]
+    for _i in range(1, len(_sc_ordenado)):
+        _v = _sc_ordenado[_i]
+        if _v is not None and (_lider - _v) > lsd_sc:
+            linhas_corte.add(_i - 1)
+            _lider = _v
 
 # ════════════════════════════════════════════════════════════════════════════════
 # SEÇÃO 6 — RANKING E LOLLIPOP
@@ -924,33 +942,29 @@ else:
             annotation_font=dict(size=13, color="#333333", weight="bold"),
         )
 
-    # Linhas de corte LSD
-    sc_vals_asc  = df_plot["sc/ha"].tolist()
-    cultivares_asc = df_plot["Cultivar"].tolist()
     if lsd_sc and mostrar_lsd_lol:
-        lider_p2   = df_apres["sc/ha"].max()
-        sc_desc2   = df_apres.sort_values("sc/ha", ascending=False)["sc/ha"].tolist()
-        cult_desc2 = df_apres.sort_values("sc/ha", ascending=False)["Cultivar"].tolist()
-        for i in range(1, len(sc_desc2)):
-            v = sc_desc2[i]
-            if v is not None and (lider_p2 - v) > lsd_sc:
-                y_corte = cult_desc2[i-1]
-                idx_y   = cultivares_asc.index(y_corte) if y_corte in cultivares_asc else None
-                if idx_y is not None and idx_y > 0:
-                    fig.add_hline(
-                        y=idx_y - 0.5,
-                        line=dict(color="#FF0000", width=2.5, dash="dot"),
-                    )
-                    fig.add_annotation(
-                        x=0.02, xref="paper",
-                        y=idx_y - 0.5, yref="y",
-                        text=f"LSD: {lsd_sc:.1f}",
-                        showarrow=False,
-                        xanchor="left",
-                        yanchor="bottom",
-                        font=dict(size=12, color="#FF0000", weight="bold"),
-                    )
-                lider_p2 = v
+        cultivares_asc = df_plot["Cultivar"].tolist()
+        _n_cult = len(cultivares_asc)
+        for _corte_idx in sorted(linhas_corte):
+            y_corte  = _cult_ordenado[_corte_idx]
+            idx_y    = cultivares_asc.index(y_corte) if y_corte in cultivares_asc else None
+            if idx_y is not None:
+                # categoryarray está invertido (menor sc/ha embaixo = cat 0)
+                # então a posição correta no eixo numérico é (N-1-idx_y) - 0.5
+                _y_pos = (_n_cult - 1 - idx_y) - 0.5
+                fig.add_hline(
+                    y=_y_pos,
+                    line=dict(color="#FF0000", width=2.5, dash="dot"),
+                )
+                fig.add_annotation(
+                    x=0.02, xref="paper",
+                    y=_y_pos, yref="y",
+                    text=f"LSD: {lsd_sc:.1f}",
+                    showarrow=False,
+                    xanchor="left",
+                    yanchor="bottom",
+                    font=dict(size=12, color="#FF0000", weight="bold"),
+                )
 
     x_max = df_plot["sc/ha"].max()
     x_range_max = round(x_max * 1.18, 1)  # 18% de folga para o texto não cortar
@@ -1108,8 +1122,7 @@ else:
     )
 
     # ── LSD e CV da ANOVA ─────────────────────────────────────────────────────
-    lsd_apres = _lsd_apres  # já calculado antes da Seção 6
-    lsd_sc    = round(lsd_apres / 60, 2) if isinstance(lsd_apres, (int, float)) and not np.isnan(lsd_apres) else None
+    # lsd_sc e linhas_corte já calculados antes da Seção 6 — não recalcular aqui
 
     try:
         d_anova = ta_filtrado[["kg_ha","dePara","cod_fazenda"]].dropna().copy()
@@ -1127,18 +1140,7 @@ else:
     except Exception:
         cv_anova = "—"
 
-    # Linhas de corte automáticas entre grupos
-    linhas_corte = set()
-    if lsd_sc is not None:
-        sc_vals = df_apres["sc/ha"].tolist()
-        lider = sc_vals[0]
-        for i in range(1, len(sc_vals)):
-            v = sc_vals[i]
-            if v is None:
-                continue
-            if (lider - v) > lsd_sc:
-                linhas_corte.add(i - 1)
-                lider = v
+    # linhas_corte já calculado antes da Seção 6 — compartilhado com o lollipop
 
     COR_STATUS = {
         "CHECK":    "#F4B184",
