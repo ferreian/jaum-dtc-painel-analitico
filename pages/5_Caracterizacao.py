@@ -221,13 +221,11 @@ with st.sidebar:
 
     # 9. GM — slider
     with st.expander("🎯 Grupo de Maturidade", expanded=False):
-        gm_min = float(ta_f8["gm_cat"].min()) if not ta_f8.empty else 5.5
-        gm_max = float(ta_f8["gm_cat"].max()) if not ta_f8.empty else 8.5
-        gm_min = max(5.5, round(gm_min, 1))
-        gm_max = min(8.5, round(gm_max, 1))
+        gm_min = float(round(ta_f8["gm_cat"].min(), 1)) if not ta_f8.empty else 5.0
+        gm_max = float(round(ta_f8["gm_cat"].max(), 1)) if not ta_f8.empty else 9.0
         if gm_min >= gm_max:
-            gm_max = min(gm_min + 0.1, 8.5)
-        gm_range = st.slider("GM", min_value=5.5, max_value=8.5,
+            gm_max = round(gm_min + 0.1, 1)
+        gm_range = st.slider("GM", min_value=gm_min, max_value=gm_max,
                               value=(gm_min, gm_max), step=0.1, format="%.1f",
                               key="ca_gm_slider")
 
