@@ -68,34 +68,72 @@ COR_TEXTO_CLASSE = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper Excel
+# Helper Excel — com cores da classificação iguais ao painel
 # ─────────────────────────────────────────────────────────────────────────────
 def to_excel(df: pd.DataFrame) -> bytes:
     buf  = io.BytesIO()
     wb   = openpyxl.Workbook()
     ws   = wb.active
-    df   = df.reset_index(drop=True)
-    df   = df.loc[:, ~df.columns.str.startswith("_") & ~df.columns.str.startswith("::") & (df.columns != "_selectedRowNodeInfo")].copy()
+
+    # Limpar colunas internas
+    df = df.reset_index(drop=True)
+    df = df.loc[:, ~df.columns.str.startswith("_") & ~df.columns.str.startswith("::") & (df.columns != "_selectedRowNodeInfo")].copy()
+
     thin = Side(style="thin", color="CCCCCC")
     brd  = Border(left=thin, right=thin, top=thin, bottom=thin)
 
+    # Cabeçalho
     for ci, col in enumerate(df.columns, 1):
         c = ws.cell(row=1, column=ci, value=str(col))
-        c.font      = Font(bold=True, name="Arial", size=10)
-        c.fill      = PatternFill("solid", start_color="F2F2F2")
+        c.font      = Font(bold=True, name="Arial", size=10, color="FFFFFF")
+        c.fill      = PatternFill("solid", start_color="4A4A4A")
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         c.border    = brd
-        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = max(12, len(str(col)) + 2)
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = max(14, len(str(col)) + 4)
     ws.row_dimensions[1].height = 28
 
+    # Mapa de cores por classe (hex sem #)
+    COR_FUNDO_XL = {
+        "Alta Performance": "90EE90",
+        "Superior":         "87CEFF",
+        "Competitivo":      "FFFF00",
+        "Restrito":         "FF0000",
+        "—":                "F3F4F6",
+    }
+    COR_FONTE_XL = {
+        "Alta Performance": "1A1A1A",
+        "Superior":         "1A1A1A",
+        "Competitivo":      "1A1A1A",
+        "Restrito":         "FFFFFF",
+        "—":                "6B7280",
+    }
+
+    # Identificar coluna "Classe" para aplicar cor na linha toda
+    col_classe_idx = None
+    if "Classe" in df.columns:
+        col_classe_idx = df.columns.tolist().index("Classe")  # 0-based
+
     for ri, row_data in enumerate(df.itertuples(index=False), start=2):
+        # Determinar cor apenas para a coluna Classe
+        classe_val = "—"
+        if col_classe_idx is not None:
+            classe_val = str(row_data[col_classe_idx]) if row_data[col_classe_idx] is not None else "—"
+        bg_classe = COR_FUNDO_XL.get(classe_val, "FFFFFF")
+        fg_classe = COR_FONTE_XL.get(classe_val, "1A1A1A")
+
         for ci, val in enumerate(row_data, 1):
             try:
                 val = None if (val is None or (isinstance(val, float) and np.isnan(val))) else val
             except (TypeError, ValueError):
                 pass
             c = ws.cell(row=ri, column=ci, value=val)
-            c.font      = Font(name="Arial", size=10)
+            # Cor só na coluna Classe, restante padrão branco
+            if col_classe_idx is not None and ci == col_classe_idx + 1:
+                c.font = Font(name="Arial", size=10, color=fg_classe, bold=True)
+                c.fill = PatternFill("solid", start_color=bg_classe)
+            else:
+                c.font = Font(name="Arial", size=10, color="1A1A1A")
+                c.fill = PatternFill("solid", start_color="FFFFFF")
             c.alignment = Alignment(horizontal="left" if ci == 1 else "center", vertical="center")
             c.border    = brd
 
