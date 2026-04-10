@@ -197,6 +197,13 @@ if "GM_visual" in ta_raw.columns:
     if len(med_gm) > 0 and med_gm.median() > 10:
         ta_raw["GM_visual"] = (ta_raw["GM_visual"] / 10).round(1)
 
+# Fallback população: usa pop_plantas_ha quando pop_plantasFinal_ha estiver nula (ex: safra 2024/25)
+if "pop_plantasFinal_ha" in ta_raw.columns and "pop_plantas_ha" in ta_raw.columns:
+    mask = ta_raw["pop_plantasFinal_ha"].isna() & ta_raw["pop_plantas_ha"].notna()
+    ta_raw.loc[mask, "pop_plantasFinal_ha"] = ta_raw.loc[mask, "pop_plantas_ha"]
+elif "pop_plantas_ha" in ta_raw.columns and "pop_plantasFinal_ha" not in ta_raw.columns:
+    ta_raw["pop_plantasFinal_ha"] = ta_raw["pop_plantas_ha"]
+
 # ── Sidebar — Filtros encadeados ──────────────────────────────────────────────
 with st.sidebar:
     st.markdown(
