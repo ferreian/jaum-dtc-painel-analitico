@@ -304,6 +304,8 @@ def _proc_av7(dfs):
     df = df.rename(columns=rename_map)
     for sigla in ["plantas","plantasFinal"]:
         colunas = [f"p{i}_{sigla}" for i in range(1, 9) if f"p{i}_{sigla}" in df.columns]
+        # Substituir zeros por NaN — campo não preenchido não deve entrar na média
+        df[colunas] = df[colunas].replace(0, np.nan)
         df[f"n_{sigla}"]     = df[colunas].count(axis=1)
         df[f"media_{sigla}"] = df[colunas].mean(axis=1).round(1)
         df[f"std_{sigla}"]   = df[colunas].std(axis=1).round(1)
