@@ -403,54 +403,69 @@ with tab1:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
         btn_t1 = st.button("▶ Rodar Análise", type="primary", key="btn_t1", use_container_width=True)
 
-    key_t1 = f"res_t1__{p1_t1}"
+    key_t1 = f"res_t1_raw__{p1_t1}"  # chave só pelo cultivar — filtros afetam exibição
 
     if btn_t1:
         with st.spinner("Calculando confrontos..."):
-            df_cross = cruzar_por_local(
-                df_p1[df_p1["dePara"] == p1_t1],
-                df_p2,
+            # Roda contra TODOS os adversários de ta_raw — filtros afetam só a exibição
+            _p1_full  = ta_raw[(ta_raw["status_material"].isin(STATUS_P1)) & (ta_raw["dePara"] == p1_t1)]
+            _p2_full  = ta_raw[ta_raw["dePara"] != p1_t1]
+            df_cross_raw = cruzar_por_local(_p1_full, _p2_full)
+            # Enriquecer com metadata para filtrar depois
+            _meta = (
+                ta_raw[["cod_fazenda","safra","regiao_macro","regiao_micro",
+                         "estado_sigla","cidade_nome","nomeFazenda","nomeResponsavel"]]
+                .drop_duplicates("cod_fazenda")
             )
-            rows = []
-            for prod2, grp in df_cross.groupby("dePara_2"):
-                n    = len(grp)
-                diff = grp["sc_ha_1"] - grp["sc_ha_2"]
-                vit  = int((diff > EMPATE_MARGEM).sum())
-                emp  = int((diff.abs() <= EMPATE_MARGEM).sum())
-                pct  = round(vit / n * 100, 1) if n > 0 else np.nan
-                sc1  = grp["sc_ha_1"].mean()
-                sc2  = grp["sc_ha_2"].mean()
-                kg1  = grp["kg_ha_1"].mean() if "kg_ha_1" in grp.columns else np.nan
-                kg2  = grp["kg_ha_2"].mean() if "kg_ha_2" in grp.columns else np.nan
-                dif_kg  = (kg1 - kg2) if not (np.isnan(kg1) or np.isnan(kg2)) else np.nan
-                dif_pct = ((sc1 / sc2) - 1) * 100 if (sc2 != 0 and not np.isnan(sc2)) else np.nan
-                classe, cor = classificar_h2h(pct)
-                dif_sc  = (sc1 - sc2) if not (np.isnan(sc1) or np.isnan(sc2)) else np.nan
-                rows.append({
-                    "Produto 1":       p1_t1,
-                    "Kg/ha Prod 1":    round(kg1, 0) if not np.isnan(kg1) else None,
-                    "SCs/ha Prod 1":   round(sc1, 1),
-                    "Produto 2":       prod2,
-                    "Kg/ha Prod 2":    round(kg2, 0) if not np.isnan(kg2) else None,
-                    "SCs/ha Prod 2":   round(sc2, 1),
-                    "Qtd. Vitórias":   vit,
-                    "N° Comparações":  n,
-                    "Dif. %":          round(dif_pct, 1) if not np.isnan(dif_pct) else None,
-                    "Dif. (KG)":       round(dif_kg,  0) if not np.isnan(dif_kg)  else None,
-                    "Dif. (SC)":       round(dif_sc,  1) if not np.isnan(dif_sc)  else None,
-                    "% Vitórias":      pct,
-                    "Classe":          classe,
-                    "_cor":            cor,
-                })
-
-            df_res = pd.DataFrame(rows)
-            if not df_res.empty:
-                df_res = df_res.sort_values("% Vitórias", ascending=False)
-            df_res = df_res.reset_index(drop=True)
-            st.session_state[key_t1] = df_res
+            df_cross_raw = df_cross_raw.merge(_meta, on="cod_fazenda", how="left")
+            st.session_state[key_t1] = df_cross_raw
 
     if key_t1 in st.session_state:
-        df_res = st.session_state[key_t1]
+        _cross_raw = st.session_state[key_t1]
+
+        # Filtrar pelos locais presentes no ta_filtrado (safra, macro, estado, etc.)
+        _locais_ativos = set(ta_filtrado["cod_fazenda"].dropna().unique())
+        _cross_filt = _cross_raw[_cross_raw["cod_fazenda"].isin(_locais_ativos)]
+
+        # Filtrar pelo status do adversário (Produto 2) selecionado na sidebar
+        if status_p2_sel and "status_material_2" in _cross_filt.columns:
+            _cross_filt = _cross_filt[_cross_filt["status_material_2"].isin(status_p2_sel)]
+
+        # Re-agregar por adversário com os locais filtrados
+        _rows = []
+        for prod2, grp in _cross_filt.groupby("dePara_2"):
+            n    = len(grp)
+            diff = grp["sc_ha_1"] - grp["sc_ha_2"]
+            vit  = int((diff > EMPATE_MARGEM).sum())
+            emp  = int((diff.abs() <= EMPATE_MARGEM).sum())
+            pct  = round(vit / n * 100, 1) if n > 0 else np.nan
+            sc1  = grp["sc_ha_1"].mean()
+            sc2  = grp["sc_ha_2"].mean()
+            kg1  = grp["kg_ha_1"].mean() if "kg_ha_1" in grp.columns else np.nan
+            kg2  = grp["kg_ha_2"].mean() if "kg_ha_2" in grp.columns else np.nan
+            dif_kg  = (kg1 - kg2) if not (np.isnan(kg1) or np.isnan(kg2)) else np.nan
+            dif_pct = ((sc1 / sc2) - 1) * 100 if (sc2 != 0 and not np.isnan(sc2)) else np.nan
+            classe, cor = classificar_h2h(pct)
+            dif_sc  = (sc1 - sc2) if not (np.isnan(sc1) or np.isnan(sc2)) else np.nan
+            _rows.append({
+                "Produto 1":       p1_t1,
+                "Kg/ha Prod 1":    round(kg1, 0) if not np.isnan(kg1) else None,
+                "SCs/ha Prod 1":   round(sc1, 1),
+                "Produto 2":       prod2,
+                "Kg/ha Prod 2":    round(kg2, 0) if not np.isnan(kg2) else None,
+                "SCs/ha Prod 2":   round(sc2, 1),
+                "Qtd. Vitórias":   vit,
+                "N° Comparações":  n,
+                "Dif. %":          round(dif_pct, 1) if not np.isnan(dif_pct) else None,
+                "Dif. (KG)":       round(dif_kg,  0) if not np.isnan(dif_kg)  else None,
+                "Dif. (SC)":       round(dif_sc,  1) if not np.isnan(dif_sc)  else None,
+                "% Vitórias":      pct,
+                "Classe":          classe,
+                "_cor":            cor,
+            })
+        df_res = pd.DataFrame(_rows)
+        if not df_res.empty:
+            df_res = df_res.sort_values("% Vitórias", ascending=False).reset_index(drop=True)
 
         if df_res.empty:
             st.info("Nenhum confronto encontrado — o cultivar não compartilha locais com os adversários selecionados.")
