@@ -2349,8 +2349,18 @@ with col_rotulo_hm:
 # ── Gráfico ───────────────────────────────────────────────────────────────────
 if modo_hm == "Produção Relativa (%)":
     pivot_plot  = pivot_rel
-    colorscale  = [[0, "#d73027"], [0.5, "#fee08b"], [1, "#1a9850"]]
-    zmin, zmax  = 0, 100   # 50% = ponto médio (0.5) = amarelo/transição
+    # Escala em degraus: <85% vermelho | 85-90% amarelo | 90-95% verde claro | >95% verde escuro
+    colorscale  = [
+        [0.00, "#d73027"],   # 0–85%   → vermelho
+        [0.85, "#d73027"],
+        [0.85, "#fee08b"],   # 85–90%  → amarelo
+        [0.90, "#fee08b"],
+        [0.90, "#66bd63"],   # 90–95%  → verde claro
+        [0.95, "#66bd63"],
+        [0.95, "#1a9850"],   # 95–100% → verde escuro
+        [1.00, "#1a9850"],
+    ]
+    zmin, zmax  = 0, 100
     colorbar_title = "Prod. Rel. (%)"
     # Porcentagem sempre visível — diferença em sc controlada pelo checkbox
     text_mat = []
@@ -2476,7 +2486,7 @@ for i, cultivar in enumerate(cultivares_ordem):
 
 st.plotly_chart(fig_hm, use_container_width=True)
 st.caption(
-    "ℹ️ Escala de cores fixa: 50% = amarelo (transição) · abaixo de 50% vai ao vermelho · acima de 50% vai ao verde · "
+    "ℹ️ Escala em degraus: < 85% vermelho · 85–90% amarelo · 90–95% verde claro · > 95% verde escuro · "
     "Células vazias = cultivar não avaliado naquele local. "
     "Linha separadora preta = divisão entre grupos de status."
 )
