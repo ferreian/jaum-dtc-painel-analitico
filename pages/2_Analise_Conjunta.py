@@ -2335,20 +2335,24 @@ pivot_total = pivot_total.reindex(index=cultivares_ordem, columns=locais_ordem)
 pivot_diff  = pivot_diff.reindex(index=cultivares_ordem,  columns=locais_ordem)
 
 # ── Seletor ───────────────────────────────────────────────────────────────────
-modo_hm = st.radio(
-    "Visualizar por:",
-    options=["Produção Relativa (%)", "Ranking por local"],
-    horizontal=True,
-    key="radio_heatmap",
-)
+col_modo_hm, col_rotulo_hm = st.columns([3, 1])
+with col_modo_hm:
+    modo_hm = st.radio(
+        "Visualizar por:",
+        options=["Produção Relativa (%)", "Ranking por local"],
+        horizontal=True,
+        key="radio_heatmap",
+    )
+with col_rotulo_hm:
+    mostrar_rotulos_hm = st.checkbox("Mostrar rótulos", value=True, key="chk_rotulos_hm")
 
 # ── Gráfico ───────────────────────────────────────────────────────────────────
 if modo_hm == "Produção Relativa (%)":
     pivot_plot  = pivot_rel
     colorscale  = [[0, "#d73027"], [0.5, "#fee08b"], [1, "#1a9850"]]
-    zmin, zmax  = 60, 100
+    zmin, zmax  = 0, 100   # 50% = ponto médio (0.5) = amarelo/transição
     colorbar_title = "Prod. Rel. (%)"
-    # Célula: "87%\n−8.3 sc" — líder mostra "100%\n líder"
+    # Porcentagem sempre visível — diferença em sc controlada pelo checkbox
     text_mat = []
     hover_mat = []
     for i, cultivar in enumerate(cultivares_ordem):
@@ -2361,10 +2365,10 @@ if modo_hm == "Produção Relativa (%)":
                 row_text.append("")
                 row_hover.append("—")
             elif d >= 0:
-                row_text.append(f"{v:.0f}%<br>líder")
+                row_text.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_hm else f"{v:.0f}%")
                 row_hover.append(f"{v:.0f}% · líder do local")
             else:
-                row_text.append(f"{v:.0f}%<br>{d:+.1f} sc")
+                row_text.append(f"{v:.0f}%<br>{d:+.1f} sc" if mostrar_rotulos_hm else f"{v:.0f}%")
                 row_hover.append(f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
         text_mat.append(row_text)
         hover_mat.append(row_hover)
@@ -2406,9 +2410,10 @@ fig_hm = go_plt.Figure(go_plt.Heatmap(
     text=text_mat,
     customdata=hover_mat,
     texttemplate="%{text}",
-    textfont=dict(size=11, color="#111111", weight="bold"),
+    textfont=dict(size=13, color="#111111", weight="bold"),
     colorscale=colorscale,
     zmin=zmin, zmax=zmax,
+    zauto=False,
     xgap=2, ygap=2,
     colorbar=dict(
         title=dict(text=colorbar_title, font=dict(size=12)),
@@ -2471,7 +2476,7 @@ for i, cultivar in enumerate(cultivares_ordem):
 
 st.plotly_chart(fig_hm, use_container_width=True)
 st.caption(
-    "ℹ️ Cor relativa ao desempenho dentro de cada local. "
+    "ℹ️ Escala de cores fixa: 50% = amarelo (transição) · abaixo de 50% vai ao vermelho · acima de 50% vai ao verde · "
     "Células vazias = cultivar não avaliado naquele local. "
     "Linha separadora preta = divisão entre grupos de status."
 )
