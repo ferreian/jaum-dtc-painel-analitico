@@ -21,6 +21,17 @@ COR_BORDA = {
     "DP2":      "#7AAF6A",
 }
 
+# ── Escala de cores global para todos os heatmaps de produção relativa ─────────
+# vermelho → salmão → creme neutro (85%) → amarelo (90%) → verde escuro (100%)
+COLORSCALE_PERF = [
+    [0.00, "#d73027"],
+    [0.70, "#f89374"],
+    [0.80, "#fff5cc"],
+    [0.87, "#fee08b"],
+    [0.90, "#a6d96a"],
+    [1.00, "#1a9850"],
+]
+
 from utils.theme import aplicar_tema, page_header, secao_titulo
 from utils.loader import carregar_2023, carregar_2024, carregar_2025
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode, ColumnsAutoSizeMode
@@ -2225,19 +2236,20 @@ with st.popover("ℹ️ Como interpretar · Heatmap", use_container_width=False)
     st.markdown("""
 **📌 O que este gráfico mostra**
 
-Cada célula representa o desempenho de um cultivar em um local específico. A cor indica se o cultivar foi bem ou mal **em relação aos outros cultivares naquele mesmo local** — não em termos absolutos.
+Cada célula representa o desempenho de um cultivar em um local específico. A cor indica se o cultivar foi bem ou mal **em relação ao melhor resultado daquele local** — não em termos absolutos.
 
 ---
 
 **🎨 Como ler as cores**
 
-- **Verde escuro** → desempenho excelente naquele local — próximo do melhor
-- **Verde claro** → acima da média do local
-- **Amarelo** → na média do local
-- **Laranja / Vermelho** → abaixo da média — ficou para trás naquele ambiente
-- **Célula vazia (cinza)** → cultivar não foi avaliado naquele local
+- **Verde escuro** → desempenho excelente — próximo do líder do local (≥ 95%)
+- **Verde claro** → desempenho competitivo (90–95%)
+- **Amarelo** → zona de transição — acima da média, ainda não no topo (87–90%)
+- **Creme** → borderline — próximo do limiar competitivo (~80–87%)
+- **Salmão / Vermelho** → abaixo do esperado — ficou para trás naquele ambiente
+- **Cinza** → cultivar não foi avaliado naquele local
 
-> A cor é sempre **relativa ao local** — um cultivar pode ser verde em um local difícil e vermelho em um local fácil. O que importa é a posição relativa entre os cultivares **dentro de cada coluna**.
+> A cor é sempre **relativa ao local** — um cultivar pode ser verde em um local difícil e salmão em um local fácil. O que importa é a posição relativa entre os cultivares **dentro de cada coluna**.
 
 ---
 
@@ -2254,14 +2266,14 @@ Cada célula representa o desempenho de um cultivar em um local específico. A c
 - **Linhas (cultivares)** → agrupados por status (CHECK, STINE, DP2), ordem alfabética dentro de cada grupo
 - **Colunas (locais)** → ordenados por estado → cidade → código do local
 - **Padrão de verde numa linha** → cultivar consistente — bom em muitos locais
-- **Verde isolado numa coluna** → local muito específico — poucos cultivares foram bem ali
-- **Linha toda amarela/vermelha** → cultivar abaixo da média em todos os ambientes
+- **Verde isolado numa coluna** → local muito seletivo — poucos cultivares foram bem ali
+- **Linha toda salmão/vermelha** → cultivar abaixo do esperado em todos os ambientes
 
 ---
 
 **💡 Dica de leitura**
 
-Compare as linhas verticalmente — se uma coluna tem muitos verdes, aquele local favoreceu quase todos os cultivares (ambiente fácil). Se tem muitos vermelhos, foi um ambiente exigente onde só os melhores se destacaram.
+Compare as colunas verticalmente — se uma coluna tem muitos verdes, aquele local favoreceu quase todos (ambiente fácil). Se tem muitos vermelhos, foi um ambiente exigente onde só os melhores se destacaram.
 """)
 
 # ── Dados ─────────────────────────────────────────────────────────────────────
@@ -2335,7 +2347,56 @@ pivot_total = pivot_total.reindex(index=cultivares_ordem, columns=locais_ordem)
 pivot_diff  = pivot_diff.reindex(index=cultivares_ordem,  columns=locais_ordem)
 
 # ── Abas dos heatmaps ────────────────────────────────────────────────────────
-tab_hm_local, tab_hm_reg = st.tabs(["📍 Por Local", "🗺️ Por Região"])
+# ── Helper: rótulos brancos nas zonas escuras do heatmap ─────────────────────
+# A paleta RdYlGn tem duas zonas escuras: vermelho-escuro (início) e verde-escuro (fim).
+# Em ambas o texto preto perde contraste — adicionamos annotations brancas.
+# A zona "clara" (laranja/amarelo/verde-claro) fica com o textfont preto padrão.
+_HM_ZMIN = 0    # zmin fixo — 0 para não clipar nenhum valor
+
+def _add_white_labels(fig, pivot_val, pivot_diff, rows, cols, mostrar=True, zmin=0, zmax=100):
+    """Annotations brancas nas zonas vermelho-escuro e verde-escuro da paleta RdYlGn."""
+    _rng = zmax - zmin
+    _lo  = zmin + 0.15 * _rng   # ≤15% — vermelho escuro → texto branco
+    _hi  = zmin + 0.95 * _rng   # ≥95% — verde escuro → texto branco
+    for i, row_id in enumerate(rows):
+        for j, col_id in enumerate(cols):
+            try:
+                v = pivot_val.iloc[i, j]
+                d = pivot_diff.iloc[i, j]
+            except (IndexError, KeyError):
+                continue
+            if np.isnan(v) or (_lo < v < _hi):
+                continue   # zona clara — texto preto do heatmap já está ok
+            d_ok = not np.isnan(d)
+            if d_ok and d >= -0.01:
+                txt = f"{v:.0f}%<br>líder" if mostrar else f"{v:.0f}%"
+            else:
+                txt = (f"{v:.0f}%<br>{d:+.1f} sc" if mostrar and d_ok else f"{v:.0f}%")
+            fig.add_annotation(
+                x=col_id, xref="x",
+                y=row_id, yref="y",
+                text=f"<b>{txt}</b>",
+                showarrow=False,
+                font=dict(size=13, color="#FFFFFF", weight="bold"),
+                align="center",
+            )
+
+def _add_nan_mask(fig, z_vals, x, y, xgap=2, ygap=2):
+    """Sobrepõe um trace cinza em células NaN para distinguir 'não avaliado' do creme neutro."""
+    z_mask = [[1 if (v is None or (isinstance(v, float) and np.isnan(v))) else float("nan")
+               for v in row] for row in z_vals]
+    fig.add_trace(go_plt.Heatmap(
+        z=z_mask,
+        x=x, y=y,
+        colorscale=[[0, "#DCDCDC"], [1, "#DCDCDC"]],
+        zmin=0, zmax=1,
+        zauto=False,
+        showscale=False,
+        xgap=xgap, ygap=ygap,
+        hoverinfo="skip",
+    ))
+
+tab_hm_local, tab_hm_reg, tab_hm_filtro = st.tabs(["📍 Por Local", "🗺️ Por Região", "🔍 Relativo ao Filtro"])
 
 with tab_hm_local:
 
@@ -2351,15 +2412,12 @@ with tab_hm_local:
         mostrar_rotulos_hm = st.checkbox("Mostrar rótulos", value=True, key="chk_rotulos_hm")
 
     # ── Gráfico ───────────────────────────────────────────────────────────────────
+    _lo_hm = _HM_ZMIN + 0.15 * (100 - _HM_ZMIN)   # ≤15% — zona vermelha escura
+    _hi_hm = _HM_ZMIN + 0.95 * (100 - _HM_ZMIN)   # ≥95% — zona verde escura
     if modo_hm == "Produção Relativa (%)":
         pivot_plot  = pivot_rel
-        colorscale  = [
-            [0.00, "#d73027"], [0.85, "#d73027"],
-            [0.85, "#fee08b"], [0.90, "#fee08b"],
-            [0.90, "#66bd63"], [0.95, "#66bd63"],
-            [0.95, "#1a9850"], [1.00, "#1a9850"],
-        ]
-        zmin, zmax  = 0, 100
+        colorscale  = COLORSCALE_PERF
+        zmin, zmax  = _HM_ZMIN, 100
         colorbar_title = "Prod. Rel. (%)"
         # Porcentagem fixa — diferença em sc controlada pelo checkbox
         text_mat = []
@@ -2373,6 +2431,9 @@ with tab_hm_local:
                 if np.isnan(v):
                     row_text.append("")
                     row_hover.append("—")
+                elif not (_lo_hm < v < _hi_hm):
+                    row_text.append("")   # zona escura — annotation branca adicionada depois
+                    row_hover.append(f"{v:.0f}% · líder do local" if d >= -0.01 else f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
                 elif d >= 0:
                     row_text.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_hm else f"{v:.0f}%")
                     row_hover.append(f"{v:.0f}% · líder do local")
@@ -2432,6 +2493,8 @@ with tab_hm_local:
         hovertemplate="<b>%{y}</b> · %{x}<br>" + colorbar_title + ": %{customdata}<extra></extra>",
     ))
 
+    _add_nan_mask(fig_hm, z_vals, locais_ordem, cultivares_ordem)
+
     # Separadores visuais entre grupos de status
     cult_status_map = cult_status.set_index("dePara")["status_material"].to_dict()
     for i, cultivar in enumerate(cultivares_ordem[:-1]):
@@ -2483,11 +2546,14 @@ with tab_hm_local:
             font=dict(size=13, color=cor, weight="bold"),
         )
 
+    if modo_hm == "Produção Relativa (%)":
+        _add_white_labels(fig_hm, pivot_rel, pivot_diff, cultivares_ordem, locais_ordem, mostrar_rotulos_hm, zmin=_HM_ZMIN, zmax=100)
+
     st.plotly_chart(fig_hm, use_container_width=True)
     st.caption(
-        "ℹ️ Escala em degraus: < 85% vermelho · 85–90% amarelo · 90–95% verde claro · > 95% verde escuro · "
-        "Células vazias = cultivar não avaliado naquele local. "
-        "Linha separadora preta = divisão entre grupos de status."
+        "ℹ️ Escala: vermelho → salmão → creme (~80%) → amarelo (~87%) → verde (≥90%) → verde escuro (100%) · "
+        "Cinza = cultivar não avaliado naquele local · "
+        "Linha preta = divisão entre grupos de status."
     )
 
     # Dicionário de locais
@@ -2558,6 +2624,8 @@ with tab_hm_reg:
 
         _text_mat_reg  = []
         _hover_mat_reg = []
+        _lo_reg = _HM_ZMIN + 0.15 * (100 - _HM_ZMIN)
+        _hi_reg = _HM_ZMIN + 0.95 * (100 - _HM_ZMIN)
         for i, cultivar in enumerate(cultivares_ordem):
             _row_t, _row_h = [], []
             for j, reg in enumerate(_regioes_ordem):
@@ -2565,6 +2633,9 @@ with tab_hm_reg:
                 d = _pivot_diff_reg.iloc[i, j] if i < len(_pivot_diff_reg) and j < len(_pivot_diff_reg.columns) else float("nan")
                 if np.isnan(v):
                     _row_t.append(""); _row_h.append("—")
+                elif not (_lo_reg < v < _hi_reg):
+                    _row_t.append("")   # zona escura — annotation branca adicionada depois
+                    _row_h.append(f"{v:.0f}% · líder da região" if (not np.isnan(d) and d >= -0.01) else f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
                 elif not np.isnan(d) and d >= -0.01:
                     _row_t.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_reg else f"{v:.0f}%")
                     _row_h.append(f"{v:.0f}% · líder da região")
@@ -2574,12 +2645,7 @@ with tab_hm_reg:
             _text_mat_reg.append(_row_t)
             _hover_mat_reg.append(_row_h)
 
-        _colorscale_reg = [
-            [0.00, "#d73027"], [0.85, "#d73027"],
-            [0.85, "#fee08b"], [0.90, "#fee08b"],
-            [0.90, "#66bd63"], [0.95, "#66bd63"],
-            [0.95, "#1a9850"], [1.00, "#1a9850"],
-        ]
+        _colorscale_reg = COLORSCALE_PERF
         _altura_r = max(350, len(cultivares_ordem) * 52 + 100)
 
         fig_hm_reg = go_plt.Figure(go_plt.Heatmap(
@@ -2591,7 +2657,7 @@ with tab_hm_reg:
             texttemplate="%{text}",
             textfont=dict(size=13, color="#111111", weight="bold"),
             colorscale=_colorscale_reg,
-            zmin=0, zmax=100,
+            zmin=_HM_ZMIN, zmax=100,
             zauto=False,
             xgap=2, ygap=2,
             colorbar=dict(
@@ -2601,6 +2667,8 @@ with tab_hm_reg:
             ),
             hovertemplate="<b>%{y}</b> · %{x}<br>Prod. Rel.: %{customdata}<extra></extra>",
         ))
+
+        _add_nan_mask(fig_hm_reg, _pivot_reg.values.tolist(), _regioes_ordem, cultivares_ordem)
 
         for i, cultivar in enumerate(cultivares_ordem[:-1]):
             if cult_status_map.get(cultivar, "") != cult_status_map.get(cultivares_ordem[i+1], ""):
@@ -2637,11 +2705,197 @@ with tab_hm_reg:
                 font=dict(size=13, color=cor, weight="bold"),
             )
 
+        _add_white_labels(fig_hm_reg, _pivot_reg, _pivot_diff_reg, cultivares_ordem, _regioes_ordem, mostrar_rotulos_reg, zmin=_HM_ZMIN, zmax=100)
+
         st.plotly_chart(fig_hm_reg, use_container_width=True)
         st.caption(
             f"ℹ️ Produção relativa média por {nivel_reg.lower()} · % em relação ao líder de cada região. "
-            "Escala em degraus: < 85% vermelho · 85–90% amarelo · 90–95% verde claro · > 95% verde escuro."
+            "Escala: vermelho → salmão → creme (~80%) → amarelo (~87%) → verde (≥90%) → verde escuro (100%)."
         )
+
+# ── Tab 3 — Heatmap Relativo ao Filtro ───────────────────────────────────────
+with tab_hm_filtro:
+    st.caption(
+        "🔍 Neste heatmap o 100% é o **melhor cultivar dentro do filtro atual** em cada local — "
+        "não o melhor absoluto. Use para comparar materiais dentro de um nicho de GM ou status. "
+        "O cabeçalho de cada coluna mostra o gap entre o líder do filtro e o líder absoluto daquele local."
+    )
+
+    col_rotulo_ft = st.columns([3, 1])[1]
+    with col_rotulo_ft:
+        mostrar_rotulos_ft = st.checkbox("Mostrar rótulos", value=True, key="chk_rotulos_ft")
+
+    # ── Cálculo: max recalculado apenas sobre cultivares do filtro ────────────
+    df_ft_base = ta_filtrado[ta_filtrado["sc_ha"] > 0][
+        ["dePara", "cod_fazenda", "sc_ha"]
+    ].dropna().copy()
+
+    # Máximo do filtro por local
+    max_filtro_local = df_ft_base.groupby("cod_fazenda")["sc_ha"].max().rename("max_filtro")
+    df_ft_base = df_ft_base.join(max_filtro_local, on="cod_fazenda")
+    df_ft_base["prod_rel_ft"] = (df_ft_base["sc_ha"] / df_ft_base["max_filtro"] * 100).round(1)
+    df_ft_base["diff_sc_ft"]  = ((df_ft_base["sc_ha"] - df_ft_base["max_filtro"]) / 60).round(1)
+
+    # Máximo absoluto por local (de ta_raw, mesmos locais) para calcular gap
+    locais_ft = df_ft_base["cod_fazenda"].unique().tolist()
+    max_abs_local = (
+        ta_raw[(ta_raw["sc_ha"] > 0) & (ta_raw["cod_fazenda"].isin(locais_ft))]
+        .groupby("cod_fazenda")["sc_ha"].max()
+        .rename("max_abs")
+    )
+    # Gap = (max_filtro - max_abs) / max_abs * 100  — negativo = filtro abaixo do absoluto
+    gap_series = ((max_filtro_local / max_abs_local - 1) * 100).round(1)
+
+    pivot_rel_ft  = df_ft_base.pivot_table(
+        index="dePara", columns="cod_fazenda", values="prod_rel_ft", aggfunc="mean"
+    )
+    pivot_diff_ft = df_ft_base.pivot_table(
+        index="dePara", columns="cod_fazenda", values="diff_sc_ft", aggfunc="mean"
+    )
+
+    pivot_rel_ft  = pivot_rel_ft.reindex(index=cultivares_ordem,  columns=locais_ordem)
+    pivot_diff_ft = pivot_diff_ft.reindex(index=cultivares_ordem, columns=locais_ordem)
+
+    # zmin dinâmico: 3pp abaixo do mínimo real do filtro, com piso em 60%
+    _vals_ft = pivot_rel_ft.stack().dropna()
+    _zmin_ft = max(60, int(_vals_ft.min()) - 3) if not _vals_ft.empty else 60
+    _lo_ft   = _zmin_ft + 0.15 * (100 - _zmin_ft)
+    _hi_ft   = _zmin_ft + 0.95 * (100 - _zmin_ft)
+
+    # ── Textos e hover ────────────────────────────────────────────────────────
+    text_mat_ft  = []
+    hover_mat_ft = []
+    for i, cultivar in enumerate(cultivares_ordem):
+        row_t, row_h = [], []
+        for j, local in enumerate(locais_ordem):
+            v = pivot_rel_ft.iloc[i, j]  if i < len(pivot_rel_ft)  and j < len(pivot_rel_ft.columns)  else float("nan")
+            d = pivot_diff_ft.iloc[i, j] if i < len(pivot_diff_ft) and j < len(pivot_diff_ft.columns) else float("nan")
+            if np.isnan(v):
+                row_t.append(""); row_h.append("—")
+            elif not (_lo_ft < v < _hi_ft):
+                row_t.append("")   # zona escura — annotation branca adicionada depois
+                row_h.append(f"{v:.0f}% · líder do filtro neste local" if (not np.isnan(d) and d >= -0.01) else f"{v:.0f}% · {d:+.1f} sc/ha vs líder do filtro")
+            elif not np.isnan(d) and d >= -0.01:
+                row_t.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_ft else f"{v:.0f}%")
+                row_h.append(f"{v:.0f}% · líder do filtro neste local")
+            else:
+                row_t.append(f"{v:.0f}%<br>{d:+.1f} sc" if mostrar_rotulos_ft else f"{v:.0f}%")
+                row_h.append(f"{v:.0f}% · {d:+.1f} sc/ha vs líder do filtro")
+        text_mat_ft.append(row_t)
+        hover_mat_ft.append(row_h)
+
+    n_cult_ft = len(cultivares_ordem)
+    altura_ft = max(350, n_cult_ft * 52 + 120)
+
+    fig_ft = go_plt.Figure(go_plt.Heatmap(
+        z=pivot_rel_ft.values.tolist(),
+        x=locais_ordem,
+        y=cultivares_ordem,
+        text=text_mat_ft,
+        customdata=hover_mat_ft,
+        texttemplate="%{text}",
+        textfont=dict(size=13, color="#111111", weight="bold"),
+        colorscale=COLORSCALE_PERF,
+        zmin=_zmin_ft, zmax=100,
+        zauto=False,
+        xgap=2, ygap=2,
+        colorbar=dict(
+            title=dict(text=f"Prod. Rel. Filtro (%) · mín={_zmin_ft}%", font=dict(size=11)),
+            tickfont=dict(size=11),
+            thickness=14,
+        ),
+        hovertemplate="<b>%{y}</b> · %{x}<br>%{customdata}<extra></extra>",
+    ))
+
+    _add_nan_mask(fig_ft, pivot_rel_ft.values.tolist(), locais_ordem, cultivares_ordem)
+
+    # Separadores entre grupos de status
+    for i, cultivar in enumerate(cultivares_ordem[:-1]):
+        if cult_status_map.get(cultivar, "") != cult_status_map.get(cultivares_ordem[i+1], ""):
+            fig_ft.add_shape(
+                type="line", x0=0, x1=1, xref="paper",
+                y0=i + 0.5, y1=i + 0.5, yref="y",
+                line=dict(color="#333333", width=2),
+            )
+
+    # Annotations de gap no header de cada coluna
+    for local in locais_ordem:
+        gap = gap_series.get(local, float("nan"))
+        if np.isnan(gap):
+            continue
+        if gap >= -0.5:
+            gap_txt = "✓"
+            gap_cor = "#1a9850"
+        else:
+            gap_txt = f"▼{abs(gap):.0f}%"
+            gap_cor = "#d73027" if gap < -5 else "#f46d43"
+
+        fig_ft.add_annotation(
+            x=local, xref="x",
+            y=1.01,  yref="paper",
+            text=f"<b>{gap_txt}</b>",
+            showarrow=False,
+            yanchor="bottom",
+            font=dict(size=13, color=gap_cor, weight="bold"),
+        )
+
+    fig_ft.update_layout(
+        height=altura_ft,
+        xaxis=dict(
+            side="bottom",
+            tickfont=dict(size=12, color="#111111", weight="bold"),
+            title=dict(text="<b>Local (cod_fazenda)</b>", font=dict(size=15, color="#111111")),
+        ),
+        yaxis=dict(
+            tickfont=dict(size=13, color="#111111", weight="bold"),
+            autorange="reversed",
+            showticklabels=False,
+        ),
+        margin=dict(t=50, b=80, l=180, r=60),
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#FFFFFF",
+        font=dict(family="Helvetica Neue, sans-serif", size=12, color="#111111"),
+    )
+
+    # Labels coloridas por status no eixo Y
+    for i, cultivar in enumerate(cultivares_ordem):
+        status = cult_status_map.get(cultivar, "")
+        cor    = COR_STATUS_TEXTO_HM.get(status, "#333333")
+        fig_ft.add_annotation(
+            x=-0.01, xref="paper",
+            y=i,     yref="y",
+            text=f"<b>{cultivar}</b>",
+            showarrow=False,
+            xanchor="right",
+            yanchor="middle",
+            font=dict(size=13, color=cor, weight="bold"),
+        )
+
+    _add_white_labels(fig_ft, pivot_rel_ft, pivot_diff_ft, cultivares_ordem, locais_ordem, mostrar_rotulos_ft, zmin=_zmin_ft, zmax=100)
+
+    st.plotly_chart(fig_ft, use_container_width=True)
+    st.caption(
+        "ℹ️ 100% = melhor cultivar do filtro naquele local (não o absoluto). "
+        "Cabeçalho: ✓ = líder do filtro = líder absoluto · ▼X% = líder do filtro está X% abaixo do melhor absoluto. "
+        "Cinza = cultivar não avaliado · Escala: vermelho → creme (~80%) → amarelo (~87%) → verde (≥90%)."
+    )
+
+    # Dicionário de locais
+    df_dic_ft = (
+        ta_filtrado[["cod_fazenda", "nomeFazenda", "cidade_nome", "estado_sigla"]]
+        .drop_duplicates()
+        .sort_values(["estado_sigla", "cidade_nome", "cod_fazenda"])
+        .rename(columns={
+            "cod_fazenda":  "Código",
+            "nomeFazenda":  "Local",
+            "cidade_nome":  "Cidade",
+            "estado_sigla": "Estado",
+        })
+        .reset_index(drop=True)
+    )
+    with st.popover(f"📍 Dicionário de locais ({len(df_dic_ft)} locais)", use_container_width=False):
+        st.markdown("Referência dos códigos exibidos nas colunas do heatmap.")
+        st.dataframe(df_dic_ft, hide_index=True, use_container_width=True)
 
 st.markdown(
     '<p style="font-size:13px;color:#374151;text-align:center;">Painel JAUM DTC · Stine Seed · '
