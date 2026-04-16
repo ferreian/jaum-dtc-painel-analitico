@@ -2377,7 +2377,7 @@ pivot_diff   = df_hm_plot.pivot_table(index="dePara", columns="cod_fazenda", val
 locais_meta = (
     df_hm_scope[["cod_fazenda", "estado_sigla", "cidade_nome"]]
     .drop_duplicates()
-    .sort_values(["estado_sigla", "cidade_nome", "cod_fazenda"])
+    .sort_values("cod_fazenda")
 )
 locais_ordem = locais_meta["cod_fazenda"].tolist()
 
