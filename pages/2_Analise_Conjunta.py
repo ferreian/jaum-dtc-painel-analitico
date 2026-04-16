@@ -201,11 +201,9 @@ if ta_raw.empty:
     st.error("❌ Nenhum dado disponível. Verifique a página de Diagnóstico.")
     st.stop()
 
-# Garante que filtro de cultivar inicia desmarcado em sessões novas
+# Garante que filtro de cultivar inicia vazio em sessões novas
 if "_cult_initialized" not in st.session_state:
-    for key in list(st.session_state.keys()):
-        if key.startswith("cult_"):
-            del st.session_state[key]
+    st.session_state["_cult_sel"] = set()
     st.session_state["_cult_initialized"] = True
 
 # Normalizar GM_visual: divide por 10 se mediana > 10 (ex: 80.9 → 8.09)
@@ -234,6 +232,9 @@ with st.sidebar:
         for key in list(st.session_state.keys()):
             if any(key.startswith(p) for p in ["safra_","macro_","micro_","estado_","cidade_",
                                                 "fazenda_","resp_","status_","cult_"]):
+                del st.session_state[key]
+        for key in ["_cidade_sel", "_cult_sel", "busca_cidade", "busca_cult"]:
+            if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
 
@@ -277,15 +278,28 @@ with st.sidebar:
     # ── 5. Cidade ──────────────────────────────────────────────────────────────
     with st.expander("🏙️ Cidade", expanded=False):
         cidades_all = sorted(ta_f4["cidade_nome"].dropna().unique().tolist())
+        if "_cidade_sel" not in st.session_state:
+            st.session_state["_cidade_sel"] = set(cidades_all)
+        # remove cidades que saíram do escopo
+        st.session_state["_cidade_sel"] &= set(cidades_all)
         busca_cidade = st.text_input("🔍 Buscar cidade", value="", key="busca_cidade",
                                      placeholder="Digite parte do nome...")
         cidades_filtradas = (
             [c for c in cidades_all if busca_cidade.strip().lower() in c.lower()]
             if busca_cidade.strip() else cidades_all
         )
+        hidden_sel_cid = [c for c in st.session_state["_cidade_sel"] if c not in cidades_filtradas]
+        if hidden_sel_cid:
+            st.caption(f"✓ {len(hidden_sel_cid)} selecionada(s) fora da busca")
         if busca_cidade.strip() and not cidades_filtradas:
             st.caption("Nenhuma cidade encontrada.")
-        cidades_sel = checkboxes("Cidade", cidades_filtradas, prefix="cidade")
+        for c in cidades_filtradas:
+            val = st.checkbox(c, value=(c in st.session_state["_cidade_sel"]), key=f"cidade_{c}")
+            if val:
+                st.session_state["_cidade_sel"].add(c)
+            else:
+                st.session_state["_cidade_sel"].discard(c)
+        cidades_sel = list(st.session_state["_cidade_sel"])
 
     ta_f5 = ta_f4[ta_f4["cidade_nome"].isin(cidades_sel)] if cidades_sel else ta_f4.iloc[0:0]
 
@@ -313,15 +327,28 @@ with st.sidebar:
     # ── 9. Cultivar (dePara) ──────────────────────────────────────────────────
     with st.expander("🌱 Cultivar", expanded=False):
         cultivares_all = sorted(ta_f8["dePara"].dropna().unique().tolist())
+        if "_cult_sel" not in st.session_state:
+            st.session_state["_cult_sel"] = set()
+        # remove cultivares que saíram do escopo
+        st.session_state["_cult_sel"] &= set(cultivares_all)
         busca_cult = st.text_input("🔍 Buscar cultivar", value="", key="busca_cult",
                                    placeholder="Digite parte do nome...")
         cultivares_filtrados = (
             [c for c in cultivares_all if busca_cult.strip().lower() in c.lower()]
             if busca_cult.strip() else cultivares_all
         )
+        hidden_sel_cult = [c for c in st.session_state["_cult_sel"] if c not in cultivares_filtrados]
+        if hidden_sel_cult:
+            st.caption(f"✓ {len(hidden_sel_cult)} selecionado(s) fora da busca")
         if busca_cult.strip() and not cultivares_filtrados:
             st.caption("Nenhum cultivar encontrado.")
-        cultivares_sel = checkboxes("Cult", cultivares_filtrados, default_all=False, prefix="cult")
+        for c in cultivares_filtrados:
+            val = st.checkbox(c, value=(c in st.session_state["_cult_sel"]), key=f"cult_{c}")
+            if val:
+                st.session_state["_cult_sel"].add(c)
+            else:
+                st.session_state["_cult_sel"].discard(c)
+        cultivares_sel = list(st.session_state["_cult_sel"])
 
     # Sem seleção = sem filtro (todos passam) — permite selecionar só os que quer comparar
     ta_f9 = ta_f8[ta_f8["dePara"].isin(cultivares_sel)] if cultivares_sel else ta_f8
