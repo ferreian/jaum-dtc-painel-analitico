@@ -201,6 +201,13 @@ if ta_raw.empty:
     st.error("❌ Nenhum dado disponível. Verifique a página de Diagnóstico.")
     st.stop()
 
+# Garante que filtro de cultivar inicia desmarcado em sessões novas
+if "_cult_initialized" not in st.session_state:
+    for key in list(st.session_state.keys()):
+        if key.startswith("cult_"):
+            del st.session_state[key]
+    st.session_state["_cult_initialized"] = True
+
 # Normalizar GM_visual: divide por 10 se mediana > 10 (ex: 80.9 → 8.09)
 if "GM_visual" in ta_raw.columns:
     med_gm = ta_raw["GM_visual"].dropna()
@@ -270,7 +277,15 @@ with st.sidebar:
     # ── 5. Cidade ──────────────────────────────────────────────────────────────
     with st.expander("🏙️ Cidade", expanded=False):
         cidades_all = sorted(ta_f4["cidade_nome"].dropna().unique().tolist())
-        cidades_sel = checkboxes("Cidade", cidades_all, prefix="cidade")
+        busca_cidade = st.text_input("🔍 Buscar cidade", value="", key="busca_cidade",
+                                     placeholder="Digite parte do nome...")
+        cidades_filtradas = (
+            [c for c in cidades_all if busca_cidade.strip().lower() in c.lower()]
+            if busca_cidade.strip() else cidades_all
+        )
+        if busca_cidade.strip() and not cidades_filtradas:
+            st.caption("Nenhuma cidade encontrada.")
+        cidades_sel = checkboxes("Cidade", cidades_filtradas, prefix="cidade")
 
     ta_f5 = ta_f4[ta_f4["cidade_nome"].isin(cidades_sel)] if cidades_sel else ta_f4.iloc[0:0]
 
@@ -298,9 +313,18 @@ with st.sidebar:
     # ── 9. Cultivar (dePara) ──────────────────────────────────────────────────
     with st.expander("🌱 Cultivar", expanded=False):
         cultivares_all = sorted(ta_f8["dePara"].dropna().unique().tolist())
-        cultivares_sel = checkboxes("Cult", cultivares_all, prefix="cult")
+        busca_cult = st.text_input("🔍 Buscar cultivar", value="", key="busca_cult",
+                                   placeholder="Digite parte do nome...")
+        cultivares_filtrados = (
+            [c for c in cultivares_all if busca_cult.strip().lower() in c.lower()]
+            if busca_cult.strip() else cultivares_all
+        )
+        if busca_cult.strip() and not cultivares_filtrados:
+            st.caption("Nenhum cultivar encontrado.")
+        cultivares_sel = checkboxes("Cult", cultivares_filtrados, default_all=False, prefix="cult")
 
-    ta_f9 = ta_f8[ta_f8["dePara"].isin(cultivares_sel)] if cultivares_sel else ta_f8.iloc[0:0]
+    # Sem seleção = sem filtro (todos passam) — permite selecionar só os que quer comparar
+    ta_f9 = ta_f8[ta_f8["dePara"].isin(cultivares_sel)] if cultivares_sel else ta_f8
 
     # ── 10. GM — slider ────────────────────────────────────────────────────────
     with st.expander("🎯 Grupo de Maturidade", expanded=False):
@@ -1591,7 +1615,11 @@ else:
     )
     with st.popover(f"📍 Dicionário de locais ({len(df_dic)} locais)", use_container_width=False):
         st.markdown("Código gerado automaticamente · passe o mouse sobre os pontos do gráfico para identificar o local.")
-        st.dataframe(df_dic, hide_index=True, use_container_width=True)
+        busca_dic = st.text_input("🔍 Buscar", placeholder="Código, local ou cidade...", key="busca_dic")
+        df_dic_show = df_dic[
+            df_dic.apply(lambda r: busca_dic.strip().lower() in " ".join(r.astype(str)).lower(), axis=1)
+        ] if busca_dic.strip() else df_dic
+        st.dataframe(df_dic_show, hide_index=True, use_container_width=True)
 
 st.divider()
 
@@ -1891,18 +1919,18 @@ else:
     """)
 
 
-    # Seletor de cultivares — default: top 10 por média
-    top10_default = (
+    # Seletor de cultivares — default: top 3 por média (evita sobreposição de labels)
+    top3_default = (
         df_er.groupby("dePara")["sc_ha"].mean()
         .sort_values(ascending=False)
-        .head(10)
+        .head(3)
         .index.tolist()
     )
     cultivares_er = sorted(df_final["dePara"].tolist())
     sel_cultivares = st.multiselect(
         "Selecione os cultivares para exibir:",
         options=cultivares_er,
-        default=[c for c in top10_default if c in cultivares_er],
+        default=[c for c in top3_default if c in cultivares_er],
         key="sel_er_reg",
     )
 
@@ -1918,18 +1946,15 @@ else:
         # Eixo X em sc/ha real = índice + média geral
         x_scha  = x_idx + media_geral
 
-        # Cores sólidas para linhas — CHECK e DP2 ganham cor forte
-        COR_LINHA_ER = {
-            "CHECK":    "#E67E22",   # laranja sólido
-            "STINE":    "#2976B6",   # azul (já era sólido)
-            "LINHAGEM": "#00FF01",   # verde original
-            "DP2":      "#27AE60",   # verde escuro sólido
-        }
+        # Paleta distinta por cultivar — Plotly cicla automaticamente
+        PALETA_ER = [
+            "#2976B6","#E67E22","#27AE60","#9B59B6","#E74C3C",
+            "#1ABC9C","#F39C12","#2ECC71","#8E44AD","#D35400",
+        ]
 
-        for cultivar in sel_cultivares:
-            grp    = df_er[df_er["dePara"] == cultivar]
-            status = grp["status_material"].iloc[0]
-            cor    = COR_LINHA_ER.get(status, "#888888")
+        for idx_c, cultivar in enumerate(sel_cultivares):
+            grp = df_er[df_er["dePara"] == cultivar]
+            cor = PALETA_ER[idx_c % len(PALETA_ER)]
 
             y      = grp["sc_ha"].values
             x      = grp["idx_amb"].values
@@ -1941,9 +1966,9 @@ else:
             s2_val  = row_res["s2"].iloc[0] if not row_res.empty else np.nan
             pi_val  = row_res["Pi"].iloc[0] if not row_res.empty else np.nan
 
-            y_line = a + b * x_idx  # regressão sobre índice
+            y_line = a + b * x_idx
 
-            # Reta de regressão — X em sc/ha real
+            # Reta de regressão
             fig_reg.add_trace(go_plt.Scatter(
                 x=x_scha, y=y_line,
                 mode="lines",
@@ -1958,7 +1983,7 @@ else:
                 ),
             ))
 
-            # Pontos observados — X = média do local em sc/ha
+            # Pontos observados
             x_obs = grp["idx_amb"].values + media_geral
             fig_reg.add_trace(go_plt.Scatter(
                 x=x_obs,
@@ -1966,7 +1991,7 @@ else:
                 mode="markers",
                 name=cultivar,
                 marker=dict(color=cor, size=7, opacity=0.6,
-                            line=dict(color=COR_BORDA.get(status, "#888"), width=1)),
+                            line=dict(color=cor, width=1)),
                 legendgroup=cultivar,
                 showlegend=False,
                 hovertemplate=(
@@ -1996,8 +2021,12 @@ else:
             xaxis_title="Produtividade média do ambiente (sc/ha)",
             yaxis_title="Produtividade do cultivar (sc/ha)",
             height=500,
-            legend=dict(orientation="v", x=1.01, y=1, xanchor="left",
-                        font=dict(size=13, color="#111111")),
+            legend=dict(
+                orientation="v", x=1.01, y=1, xanchor="left",
+                font=dict(size=13, color="#111111"),
+                bgcolor="rgba(255,255,255,0.85)",
+                bordercolor="#DDDDDD", borderwidth=1,
+            ),
             margin=dict(t=40, b=60, l=60, r=160),
             plot_bgcolor="#FFFFFF",
             paper_bgcolor="#FFFFFF",
@@ -2368,7 +2397,7 @@ def _add_white_labels(fig, pivot_val, pivot_diff, rows, cols, mostrar=True, zmin
             if np.isnan(v) or (_lo < v < _hi):
                 continue   # zona clara — texto preto do heatmap já está ok
             d_ok = not np.isnan(d)
-            if d_ok and d >= -0.01:
+            if v >= 99.5:
                 txt = f"{v:.0f}%<br>líder" if mostrar else f"{v:.0f}%"
             else:
                 txt = (f"{v:.0f}%<br>{d:+.1f} sc" if mostrar and d_ok else f"{v:.0f}%")
@@ -2433,8 +2462,8 @@ with tab_hm_local:
                     row_hover.append("—")
                 elif not (_lo_hm < v < _hi_hm):
                     row_text.append("")   # zona escura — annotation branca adicionada depois
-                    row_hover.append(f"{v:.0f}% · líder do local" if d >= -0.01 else f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
-                elif d >= 0:
+                    row_hover.append(f"{v:.0f}% · líder do local" if v >= 99.5 else f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
+                elif v >= 99.5:
                     row_text.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_hm else f"{v:.0f}%")
                     row_hover.append(f"{v:.0f}% · líder do local")
                 else:
@@ -2571,7 +2600,11 @@ with tab_hm_local:
     )
     with st.popover(f"📍 Dicionário de locais ({len(df_dic_hm)} locais)", use_container_width=False):
         st.markdown("Referência dos códigos exibidos nas colunas do heatmap.")
-        st.dataframe(df_dic_hm, hide_index=True, use_container_width=True)
+        busca_dic_hm = st.text_input("🔍 Buscar", placeholder="Código, local ou cidade...", key="busca_dic_hm")
+        df_dic_hm_show = df_dic_hm[
+            df_dic_hm.apply(lambda r: busca_dic_hm.strip().lower() in " ".join(r.astype(str)).lower(), axis=1)
+        ] if busca_dic_hm.strip() else df_dic_hm
+        st.dataframe(df_dic_hm_show, hide_index=True, use_container_width=True)
 
 
 
@@ -2635,8 +2668,8 @@ with tab_hm_reg:
                     _row_t.append(""); _row_h.append("—")
                 elif not (_lo_reg < v < _hi_reg):
                     _row_t.append("")   # zona escura — annotation branca adicionada depois
-                    _row_h.append(f"{v:.0f}% · líder da região" if (not np.isnan(d) and d >= -0.01) else f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
-                elif not np.isnan(d) and d >= -0.01:
+                    _row_h.append(f"{v:.0f}% · líder da região" if v >= 99.5 else f"{v:.0f}% · {d:+.1f} sc/ha vs líder")
+                elif v >= 99.5:
                     _row_t.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_reg else f"{v:.0f}%")
                     _row_h.append(f"{v:.0f}% · líder da região")
                 else:
@@ -2774,8 +2807,8 @@ with tab_hm_filtro:
                 row_t.append(""); row_h.append("—")
             elif not (_lo_ft < v < _hi_ft):
                 row_t.append("")   # zona escura — annotation branca adicionada depois
-                row_h.append(f"{v:.0f}% · líder do filtro neste local" if (not np.isnan(d) and d >= -0.01) else f"{v:.0f}% · {d:+.1f} sc/ha vs líder do filtro")
-            elif not np.isnan(d) and d >= -0.01:
+                row_h.append(f"{v:.0f}% · líder do filtro neste local" if v >= 99.5 else f"{v:.0f}% · {d:+.1f} sc/ha vs líder do filtro")
+            elif v >= 99.5:
                 row_t.append(f"{v:.0f}%<br>líder" if mostrar_rotulos_ft else f"{v:.0f}%")
                 row_h.append(f"{v:.0f}% · líder do filtro neste local")
             else:
@@ -2895,7 +2928,11 @@ with tab_hm_filtro:
     )
     with st.popover(f"📍 Dicionário de locais ({len(df_dic_ft)} locais)", use_container_width=False):
         st.markdown("Referência dos códigos exibidos nas colunas do heatmap.")
-        st.dataframe(df_dic_ft, hide_index=True, use_container_width=True)
+        busca_dic_ft = st.text_input("🔍 Buscar", placeholder="Código, local ou cidade...", key="busca_dic_ft")
+        df_dic_ft_show = df_dic_ft[
+            df_dic_ft.apply(lambda r: busca_dic_ft.strip().lower() in " ".join(r.astype(str)).lower(), axis=1)
+        ] if busca_dic_ft.strip() else df_dic_ft
+        st.dataframe(df_dic_ft_show, hide_index=True, use_container_width=True)
 
 st.markdown(
     '<p style="font-size:13px;color:#374151;text-align:center;">Painel JAUM DTC · Stine Seed · '
