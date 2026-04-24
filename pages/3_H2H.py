@@ -357,11 +357,15 @@ df_p2 = ta_filtrado[ta_filtrado["status_material"].isin(status_p2_sel)].copy() i
 def cruzar_por_local(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
     """
     Cross-join de df1 × df2 por cod_fazenda.
-    Retorna uma linha por (dePara_1, dePara_2, cod_fazenda) com sc_ha e kg_ha de cada um.
+    Agrega por local (média) antes do merge para evitar duplicatas de parcelas.
+    Retorna uma linha por (dePara_1, dePara_2, cod_fazenda).
     """
     cols_base = ["dePara", "status_material", "cod_fazenda", "sc_ha", "kg_ha"]
     d1 = df1[[c for c in cols_base if c in df1.columns]].dropna(subset=["sc_ha"]).copy()
     d2 = df2[[c for c in cols_base if c in df2.columns]].dropna(subset=["sc_ha"]).copy()
+    # Agregar por local — elimina duplicatas de parcelas
+    d1 = d1.groupby(["dePara", "status_material", "cod_fazenda"], as_index=False)[["sc_ha","kg_ha"]].mean()
+    d2 = d2.groupby(["dePara", "status_material", "cod_fazenda"], as_index=False)[["sc_ha","kg_ha"]].mean()
     merged = d1.merge(d2, on="cod_fazenda", suffixes=("_1", "_2"))
     return merged[merged["dePara_1"] != merged["dePara_2"]].reset_index(drop=True)
 
@@ -663,10 +667,12 @@ with tab2:
             d1_loc = (
                 df_p1[df_p1["dePara"] == p1_t2][["cod_fazenda", "sc_ha", "kg_ha"]]
                 .dropna(subset=["sc_ha"])
+                .groupby("cod_fazenda", as_index=False)[["sc_ha","kg_ha"]].mean()
             )
             d2_loc = (
                 df_p2[df_p2["dePara"] == p2_t2][["cod_fazenda", "sc_ha", "kg_ha"]]
                 .dropna(subset=["sc_ha"])
+                .groupby("cod_fazenda", as_index=False)[["sc_ha","kg_ha"]].mean()
             )
             df_loc = d1_loc.merge(d2_loc, on="cod_fazenda", suffixes=("_1", "_2")).copy()
             df_loc["diff_sc"] = df_loc["sc_ha_1"] - df_loc["sc_ha_2"]
@@ -1099,6 +1105,7 @@ with tab3:
             _df1 = (
                 ta_filtrado[(ta_filtrado["dePara"] == p1_t3) & (ta_filtrado["cod_fazenda"].isin(_locais_comuns))]
                 [["cod_fazenda", "sc_ha"]].dropna()
+                .groupby("cod_fazenda", as_index=False)["sc_ha"].mean()
                 .join(_media_loc, on="cod_fazenda")
                 .assign(desvio=lambda d: d["sc_ha"] - d["media_local"],
                         cultivar=p1_t3)
@@ -1106,6 +1113,7 @@ with tab3:
             _df2 = (
                 ta_filtrado[(ta_filtrado["dePara"] == p2_t3) & (ta_filtrado["cod_fazenda"].isin(_locais_comuns))]
                 [["cod_fazenda", "sc_ha"]].dropna()
+                .groupby("cod_fazenda", as_index=False)["sc_ha"].mean()
                 .join(_media_loc, on="cod_fazenda")
                 .assign(desvio=lambda d: d["sc_ha"] - d["media_local"],
                         cultivar=p2_t3)
