@@ -1149,9 +1149,14 @@ As barras mostram a diferença entre os dois cultivares. Este gráfico mostra co
 
             # Métricas para o subtítulo
             _n_comuns   = len(_df1)
-            _diff_media = float((_df1["sc_ha"].values - _df2["sc_ha"].values).mean()) if len(_df1) == len(_df2) else (_df1["desvio"].mean() - _df2["desvio"].mean())
-            _n_vit      = int(((_df1["sc_ha"].values - _df2.set_index("cod_fazenda").reindex(_df1["cod_fazenda"].values)["sc_ha"].values) > EMPATE_MARGEM).sum()) if len(_df1) > 0 else 0
-            _pct_vit    = round(_n_vit / _n_comuns * 100, 1) if _n_comuns > 0 else 0
+            # Agregar por local antes de comparar (evita duplicatas de parcelas)
+            _sc1_loc = _df1.groupby("cod_fazenda")["sc_ha"].mean()
+            _sc2_loc = _df2.groupby("cod_fazenda")["sc_ha"].mean()
+            _idx_comum = _sc1_loc.index.intersection(_sc2_loc.index)
+            _diff_vals  = _sc1_loc[_idx_comum] - _sc2_loc[_idx_comum]
+            _diff_media = float(_diff_vals.mean()) if len(_diff_vals) > 0 else 0
+            _n_vit      = int((_diff_vals > EMPATE_MARGEM).sum())
+            _pct_vit    = round(_n_vit / len(_idx_comum) * 100, 1) if len(_idx_comum) > 0 else 0
 
             # P-value via t-test pareado
             try:
