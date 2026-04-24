@@ -369,7 +369,7 @@ def cruzar_por_local(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["📋  Tabela de Classificação", "📊  Análise por Local"])
+tab1, tab2, tab3 = st.tabs(["📋  Tabela de Classificação", "📊  Análise por Local", "🔀  Desvios por Ambiente"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1036,6 +1036,247 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                     key="dl_t2",
                 )
 
+    else:
+        st.info("👆 Selecione os dois cultivares e clique em **▶ Rodar Análise** para calcular.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — Desvios por Ambiente
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab3:
+    secao_titulo(
+        "HEAD-TO-HEAD · DESVIOS",
+        "Como cada cultivar se comporta em ambientes favoráveis vs. adversos?",
+        "Desvio em relação à média do local — pontos acima de 0 = cultivar superou a média daquele ambiente.",
+    )
+
+    if df_p1.empty:
+        st.warning("⚠️ Dados insuficientes com os filtros atuais.")
+        st.stop()
+
+    cults_p1_t3 = sorted(df_p1["dePara"].dropna().unique())
+    col_p1_t3, col_p2_t3, col_b3 = st.columns([2, 2, 1])
+
+    with col_p1_t3:
+        p1_t3 = st.selectbox("Produto 1 (STINE / DP2 / LINHAGEM)", cults_p1_t3, key="p1_t3")
+
+    locais_p1_t3 = set(df_p1[df_p1["dePara"] == p1_t3]["cod_fazenda"].dropna().unique())
+    adv_disp_t3  = sorted(
+        ta_filtrado[
+            (ta_filtrado["cod_fazenda"].isin(locais_p1_t3)) &
+            (ta_filtrado["dePara"] != p1_t3)
+        ]["dePara"].dropna().unique()
+    )
+
+    with col_p2_t3:
+        if adv_disp_t3:
+            p2_t3 = st.selectbox("Produto 2 (adversário)", adv_disp_t3, key="p2_t3")
+        else:
+            st.warning("Nenhum adversário com locais em comum.")
+            p2_t3 = None
+
+    with col_b3:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        btn_t3 = st.button("▶ Rodar Análise", type="primary", key="btn_t3", use_container_width=True)
+
+    key_t3 = f"res_t3__{p1_t3}__{p2_t3}"
+
+    if btn_t3 and p2_t3:
+        with st.spinner("Calculando desvios..."):
+            # Média do local (todos os cultivares do ta_filtrado naquele local)
+            _media_loc = (
+                ta_filtrado[ta_filtrado["sc_ha"] > 0]
+                .groupby("cod_fazenda")["sc_ha"]
+                .mean()
+                .rename("media_local")
+            )
+
+            # Locais compartilhados entre p1 e p2
+            _loc_p1 = set(ta_filtrado[ta_filtrado["dePara"] == p1_t3]["cod_fazenda"].dropna())
+            _loc_p2 = set(ta_filtrado[ta_filtrado["dePara"] == p2_t3]["cod_fazenda"].dropna())
+            _locais_comuns = _loc_p1 & _loc_p2
+
+            _df1 = (
+                ta_filtrado[(ta_filtrado["dePara"] == p1_t3) & (ta_filtrado["cod_fazenda"].isin(_locais_comuns))]
+                [["cod_fazenda", "sc_ha"]].dropna()
+                .join(_media_loc, on="cod_fazenda")
+                .assign(desvio=lambda d: d["sc_ha"] - d["media_local"],
+                        cultivar=p1_t3)
+            )
+            _df2 = (
+                ta_filtrado[(ta_filtrado["dePara"] == p2_t3) & (ta_filtrado["cod_fazenda"].isin(_locais_comuns))]
+                [["cod_fazenda", "sc_ha"]].dropna()
+                .join(_media_loc, on="cod_fazenda")
+                .assign(desvio=lambda d: d["sc_ha"] - d["media_local"],
+                        cultivar=p2_t3)
+            )
+            st.session_state[key_t3] = (_df1, _df2)
+
+    if key_t3 in st.session_state and p2_t3:
+        _df1, _df2 = st.session_state[key_t3]
+
+        if _df1.empty or _df2.empty:
+            st.info("Nenhum local compartilhado encontrado.")
+        else:
+            with st.popover("ℹ️ Como interpretar · Desvios por Ambiente", use_container_width=False):
+                st.markdown("""
+**📌 O que este gráfico mostra**
+
+Cada ponto representa o desempenho de um cultivar **em relação à média de todos os cultivares** naquele local.
+
+- **Eixo X** → produtividade média do local (índice ambiental)
+- **Eixo Y** → desvio do cultivar: `sc/ha do cultivar − média do local`
+
+**Como ler:**
+- **Ponto acima de 0** → cultivar produziu acima da média naquele local
+- **Ponto abaixo de 0** → cultivar ficou abaixo da média
+- **Reta inclinada para cima** → ganha vantagem em ambientes melhores (responsivo)
+- **Reta inclinada para baixo** → perde vantagem em ambientes melhores (estável em adversos)
+- **Reta horizontal** → comportamento independente do ambiente
+
+**Diferença para o gráfico de barras:**
+As barras mostram a diferença entre os dois cultivares. Este gráfico mostra como **cada um se posiciona em relação ao conjunto** de todos os cultivares em cada ambiente.
+""")
+
+            # Cores
+            _cor1 = "#2976B6"
+            _cor2 = "#E67E22"
+            _status1 = df_p1[df_p1["dePara"] == p1_t3]["status_material"].iloc[0] if not df_p1[df_p1["dePara"] == p1_t3].empty else ""
+            _status2 = ta_filtrado[ta_filtrado["dePara"] == p2_t3]["status_material"].iloc[0] if not ta_filtrado[ta_filtrado["dePara"] == p2_t3].empty else ""
+            _COR_MAP = {"CHECK": "#E67E22", "STINE": "#2976B6", "LINHAGEM": "#00FF01", "DP2": "#27AE60"}
+            _cor1 = _COR_MAP.get(_status1, "#2976B6")
+            _cor2 = _COR_MAP.get(_status2, "#E67E22")
+
+            # Métricas para o subtítulo
+            _n_comuns   = len(_df1)
+            _diff_media = float((_df1["sc_ha"].values - _df2["sc_ha"].values).mean()) if len(_df1) == len(_df2) else (_df1["desvio"].mean() - _df2["desvio"].mean())
+            _n_vit      = int(((_df1["sc_ha"].values - _df2.set_index("cod_fazenda").reindex(_df1["cod_fazenda"].values)["sc_ha"].values) > EMPATE_MARGEM).sum()) if len(_df1) > 0 else 0
+            _pct_vit    = round(_n_vit / _n_comuns * 100, 1) if _n_comuns > 0 else 0
+
+            # P-value via t-test pareado
+            try:
+                from scipy import stats as _stats_h2h
+                _d1_sc = _df1.set_index("cod_fazenda")["sc_ha"]
+                _d2_sc = _df2.set_index("cod_fazenda")["sc_ha"]
+                _idx   = _d1_sc.index.intersection(_d2_sc.index)
+                if len(_idx) >= 2:
+                    _, _pval = _stats_h2h.ttest_rel(_d1_sc[_idx], _d2_sc[_idx])
+                    _pval_str = f"p={_pval:.2f}"
+                else:
+                    _pval_str = ""
+            except Exception:
+                _pval_str = ""
+
+            _sinal     = "+" if _diff_media >= 0 else ""
+            _subtitulo = f"{_pct_vit:.0f}% de vitórias · diferença média {_sinal}{_diff_media:.1f} sc/ha · {_pval_str} · {_n_comuns} locais"
+
+            st.markdown(
+                f'<p style="font-size:22px;font-weight:700;color:#1A1A1A;margin:0;">'
+                f'<span style="color:{_cor1};">{p1_t3}</span>'
+                f' <span style="font-size:16px;font-weight:400;color:#6B7280;">vs</span> '
+                f'<span style="color:{_cor2};">{p2_t3}</span></p>'
+                f'<p style="font-size:15px;color:#374151;margin:4px 0 14px;">{_subtitulo}</p>',
+                unsafe_allow_html=True,
+            )
+
+            fig_dev = go_plt.Figure()
+
+            # Enriquecer df1 e df2 com metadata do local
+            _meta_loc = (
+                ta_filtrado[["cod_fazenda", "nomeFazenda", "cidade_nome", "estado_sigla"]]
+                .drop_duplicates("cod_fazenda")
+                .set_index("cod_fazenda")
+            )
+
+            for _df, _cultivar, _cor in [(_df1, p1_t3, _cor1), (_df2, p2_t3, _cor2)]:
+                _df = _df.join(_meta_loc, on="cod_fazenda", how="left")
+                _x = _df["media_local"].values
+                _y = _df["desvio"].values
+
+                # Pontos
+                fig_dev.add_trace(go_plt.Scatter(
+                    x=_x, y=_y,
+                    mode="markers",
+                    name=_cultivar,
+                    marker=dict(color=_cor, size=10, opacity=0.80,
+                                line=dict(color="#FFFFFF", width=1.2)),
+                    customdata=_df[["cod_fazenda", "nomeFazenda", "cidade_nome", "estado_sigla"]].values,
+                    hovertemplate=(
+                        f"<b>{_cultivar}</b><br>"
+                        "<b>%{customdata[0]}</b> — %{customdata[1]}<br>"
+                        "%{customdata[2]}, %{customdata[3]}<br>"
+                        "Média local: %{x:.1f} sc/ha<br>"
+                        "Desvio: %{y:+.1f} sc/ha<extra></extra>"
+                    ),
+                ))
+
+                # Reta de regressão
+                if len(_x) >= 2:
+                    _X_r = np.column_stack([np.ones(len(_x)), _x])
+                    try:
+                        _beta, _, _, _ = np.linalg.lstsq(_X_r, _y, rcond=None)
+                        _x_line = np.linspace(_x.min(), _x.max(), 100)
+                        _y_line = _beta[0] + _beta[1] * _x_line
+                        _slope  = _beta[1]
+                        _y_hat  = _X_r @ _beta
+                        _ss_res = np.sum((_y - _y_hat) ** 2)
+                        _ss_tot = np.sum((_y - _y.mean()) ** 2)
+                        _r2     = 1 - _ss_res / _ss_tot if _ss_tot > 0 else np.nan
+
+                        fig_dev.add_trace(go_plt.Scatter(
+                            x=_x_line, y=_y_line,
+                            mode="lines",
+                            line=dict(color=_cor, width=2.5),
+                            showlegend=False,
+                            hoverinfo="skip",
+                        ))
+                        fig_dev.add_annotation(
+                            x=_x_line[-1], y=_y_line[-1],
+                            text=f"<b>{_cultivar}</b><br>b={_slope:+.3f} · R²={_r2:.2f}",
+                            showarrow=False, xanchor="left",
+                            font=dict(size=12, color=_cor, weight="bold"),
+                            bgcolor="rgba(255,255,255,0.8)",
+                        )
+                    except Exception:
+                        pass
+
+            # Linha y=0
+            fig_dev.add_hline(y=0, line=dict(color="#444444", width=1.5, dash="dot"))
+
+            fig_dev.update_layout(
+                height=520,
+                plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF",
+                font=dict(family="Helvetica Neue, sans-serif", color="#1A1A1A"),
+                showlegend=True,
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0,
+                    font=dict(size=13, color="#1A1A1A", weight="bold"),
+                ),
+                xaxis=dict(
+                    title=dict(text="<b>Produtividade média do local (sc/ha)</b>",
+                               font=dict(size=14, color="#1A1A1A", weight="bold")),
+                    tickfont=dict(size=12, color="#1A1A1A", weight="bold"),
+                    showgrid=True, gridcolor="#E5E5E5", zeroline=False,
+                ),
+                yaxis=dict(
+                    title=dict(text="<b>Desvio em relação à média do local (sc/ha)</b>",
+                               font=dict(size=14, color="#1A1A1A", weight="bold")),
+                    tickfont=dict(size=12, color="#1A1A1A", weight="bold"),
+                    showgrid=True, gridcolor="#E5E5E5", zeroline=False,
+                ),
+                margin=dict(t=60, b=60, l=80, r=220),
+            )
+
+            st.plotly_chart(fig_dev, use_container_width=True)
+            st.markdown(
+                '<p style="font-size:12px;color:#374151;">'
+                "ℹ️ Desvio = sc/ha do cultivar − média de todos os cultivares no local · "
+                "b > 0 = ganha vantagem em ambientes favoráveis · "
+                "b < 0 = perde vantagem em ambientes melhores · "
+                "b ≈ 0 = comportamento independente do ambiente."
+                "</p>",
+                unsafe_allow_html=True,
+            )
     else:
         st.info("👆 Selecione os dois cultivares e clique em **▶ Rodar Análise** para calcular.")
 
