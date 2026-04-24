@@ -924,10 +924,12 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                 st.plotly_chart(fig_d, use_container_width=True)
 
             with col_mapa:
-                # Join com lat/lon da base
+                # Join com lat/lon + safra da base
                 df_coords = (
-                    ta_filtrado[["cod_fazenda", "latitude", "longitude", "nomeFazenda", "cidade_nome", "estado_sigla"]]
-                    .drop_duplicates("cod_fazenda")
+                    ta_filtrado[["cod_fazenda", "latitude", "longitude", "nomeFazenda", "cidade_nome", "estado_sigla", "safra"]]
+                    .dropna(subset=["latitude", "longitude"])
+                    .sort_values("safra")
+                    .drop_duplicates("cod_fazenda", keep="last")
                 )
                 df_map = df_loc.merge(df_coords, on="cod_fazenda", how="left").dropna(subset=["latitude", "longitude"])
 
@@ -935,11 +937,22 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                     import folium
                     from streamlit_folium import st_folium
 
-                    COR_MAP = {
-                        "Vitória": "#27AE60",
-                        "Empate":  "#FFDD00",
-                        "Derrota": "#E74C3C",
-                    }
+                    # Escala de cores por diferença em sc/ha — empate = ±1 sc/ha
+                    def _cor_diff(diff):
+                        if   diff >= 10: return "#1a6e2e"   # verde escuro  ≥ +10
+                        elif diff >=  5: return "#27AE60"   # verde         ≥ +5
+                        elif diff >=  2: return "#82C784"   # verde claro   ≥ +2
+                        elif diff >= -1: return "#D3D3D3"   # cinza         empate (±1)
+                        elif diff >= -5: return "#F4A460"   # laranja       < −2
+                        elif diff >=-10: return "#E74C3C"   # vermelho      < −5
+                        else:            return "#8B0000"   # vermelho esc  ≤ −10
+
+                    # Símbolo por safra
+                    _safras_unicas = sorted(df_map["safra"].dropna().unique().tolist())
+                    _simbolo_safra = {}
+                    _icones = ["circle", "star", "square", "diamond"]
+                    for i, s in enumerate(_safras_unicas):
+                        _simbolo_safra[s] = _icones[i % len(_icones)]
 
                     lat_c = df_map["latitude"].mean()
                     lon_c = df_map["longitude"].mean()
@@ -951,33 +964,83 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                     )
 
                     for _, row in df_map.iterrows():
-                        cor    = COR_MAP.get(row["resultado"], "#888888")
+                        _cor   = _cor_diff(row["diff_sc"])
+                        _safra = str(row.get("safra", ""))
+                        _icon  = _simbolo_safra.get(_safra, "circle")
                         popup  = folium.Popup(
                             f"<b>{row['nomeFazenda']}</b><br>"
                             f"{row['cidade_nome']} — {row['estado_sigla']}<br>"
+                            f"Safra: {_safra}<br>"
                             f"<b>{p1_t2}:</b> {row['sc_ha_1']:.1f} sc/ha<br>"
                             f"<b>{p2_t2}:</b> {row['sc_ha_2']:.1f} sc/ha<br>"
-                            f"<b>Diferença:</b> {row['diff_sc']:+.1f} sc/ha<br>"
-                            f"<b>Resultado:</b> {row['resultado']}",
+                            f"<b>Diferença:</b> {row['diff_sc']:+.1f} sc/ha",
                             max_width=260,
                         )
-                        folium.CircleMarker(
-                            location=[row["latitude"], row["longitude"]],
-                            radius=9,
-                            color="#FFFFFF",
-                            weight=1.5,
-                            fill=True,
-                            fill_color=cor,
-                            fill_opacity=0.9,
-                            popup=popup,
-                            tooltip=f"{row['nomeFazenda']} | {row['cidade_nome']} — {row['estado_sigla']} · {row['resultado']} ({row['diff_sc']:+.1f} sc/ha)",
-                        ).add_to(m)
+                        if _icon == "circle":
+                            folium.CircleMarker(
+                                location=[row["latitude"], row["longitude"]],
+                                radius=9,
+                                color="#FFFFFF",
+                                weight=1.5,
+                                fill=True,
+                                fill_color=_cor,
+                                fill_opacity=0.92,
+                                popup=popup,
+                                tooltip=f"{row['nomeFazenda']} · {_safra} · {row['diff_sc']:+.1f} sc/ha",
+                            ).add_to(m)
+                        else:
+                            folium.Marker(
+                                location=[row["latitude"], row["longitude"]],
+                                popup=popup,
+                                tooltip=f"{row['nomeFazenda']} · {_safra} · {row['diff_sc']:+.1f} sc/ha",
+                                icon=folium.Icon(
+                                    color="white",
+                                    icon_color=_cor,
+                                    icon=_icon,
+                                    prefix="fa",
+                                ),
+                            ).add_to(m)
 
+                    # Legenda HTML
+                    _legenda_cores = [
+                        ("≥ +10 sc/ha", "#1a6e2e"),
+                        ("≥ +5 sc/ha",  "#27AE60"),
+                        ("≥ +2 sc/ha",  "#82C784"),
+                        ("±1 sc/ha (empate)", "#D3D3D3"),
+                        ("< −2 sc/ha",  "#F4A460"),
+                        ("< −5 sc/ha",  "#E74C3C"),
+                        ("≤ −10 sc/ha", "#8B0000"),
+                    ]
+                    _leg_cores_html = "".join([
+                        f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
+                        f'<div style="width:14px;height:14px;border-radius:50%;background:{c};border:1px solid #ccc;flex-shrink:0;"></div>'
+                        f'<span style="font-size:11px;color:#374151;">{lbl}</span></div>'
+                        for lbl, c in _legenda_cores
+                    ])
+                    _leg_safras_html = "".join([
+                        f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
+                        f'<span style="font-size:12px;">{"⭐" if s == "star" else "●" if s == "circle" else "■"}</span>'
+                        f'<span style="font-size:11px;color:#374151;">{sf}</span></div>'
+                        for sf, s in _simbolo_safra.items()
+                    ])
+                    _legenda_html = f"""
+                    <div style='background:white;padding:10px 14px;border-radius:8px;
+                                border:1px solid #E5E7EB;box-shadow:0 1px 4px rgba(0,0,0,0.08);
+                                display:inline-block;'>
+                        <p style='font-size:12px;font-weight:700;color:#1A1A1A;margin:0 0 6px;'>Diferença (sc/ha)</p>
+                        {_leg_cores_html}
+                        {"<p style='font-size:12px;font-weight:700;color:#1A1A1A;margin:8px 0 4px;'>Safra</p>" + _leg_safras_html if len(_safras_unicas) > 1 else ""}
+                    </div>
+                    """
                     st.markdown(
-                        '<p style="font-size:13px;font-weight:600;color:#4A4A4A;margin:0 0 6px;">📍 Locais por Resultado</p>',
+                        '<p style="font-size:13px;font-weight:600;color:#4A4A4A;margin:0 0 6px;">📍 Locais por Diferença</p>',
                         unsafe_allow_html=True,
                     )
-                    st_folium(m, use_container_width=True, height=420, returned_objects=[])
+                    _col_mapa_m, _col_mapa_leg = st.columns([4, 1])
+                    with _col_mapa_m:
+                        st_folium(m, use_container_width=True, height=420, returned_objects=[])
+                    with _col_mapa_leg:
+                        st.markdown(_legenda_html, unsafe_allow_html=True)
                 else:
                     st.info("Coordenadas não disponíveis para os locais deste confronto.")
 
