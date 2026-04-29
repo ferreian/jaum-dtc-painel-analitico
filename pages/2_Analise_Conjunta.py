@@ -252,28 +252,88 @@ with st.sidebar:
     # ── 4. Estado ──────────────────────────────────────────────────────────────
     with st.expander("🏛️ Estado", expanded=False):
         estados_all = sorted(ta_f3["estado_sigla"].dropna().unique().tolist())
-        estados_sel = checkboxes("Estado", estados_all, prefix="estado")
+        if "estado_selecionados" not in st.session_state: st.session_state["estado_selecionados"] = set()
+        if "estado_reset" not in st.session_state: st.session_state["estado_reset"] = 0
+        st.session_state["estado_selecionados"] &= set(estados_all)
+        _busca_estado = st.text_input("🔍 Buscar", value="", key="busca_estado", placeholder="Digite para filtrar...")
+        _estados_f = [c for c in estados_all if _busca_estado.strip().lower() in c.lower()] if _busca_estado.strip() else estados_all
+        if st.button("🗑️ Limpar seleção", key="estado_limpar", use_container_width=True):
+            st.session_state["estado_selecionados"] = set()
+            st.session_state["estado_reset"] += 1
+            st.rerun()
+        _r = st.session_state["estado_reset"]
+        for _c in _estados_f:
+            if st.checkbox(str(_c), value=(_c in st.session_state["estado_selecionados"]), key=f"estado_chk_{_r}_{_c}"):
+                st.session_state["estado_selecionados"].add(_c)
+            else:
+                st.session_state["estado_selecionados"].discard(_c)
+        estados_sel = list(st.session_state["estado_selecionados"]) or estados_all
 
     ta_f4 = ta_f3[ta_f3["estado_sigla"].isin(estados_sel)] if estados_sel else ta_f3.iloc[0:0]
 
     # ── 5. Cidade ──────────────────────────────────────────────────────────────
     with st.expander("🏙️ Cidade", expanded=False):
         cidades_all = sorted(ta_f4["cidade_nome"].dropna().unique().tolist())
-        cidades_sel = checkboxes("Cidade", cidades_all, prefix="cidade")
+        if "cidade_selecionados" not in st.session_state: st.session_state["cidade_selecionados"] = set()
+        if "cidade_reset" not in st.session_state: st.session_state["cidade_reset"] = 0
+        st.session_state["cidade_selecionados"] &= set(cidades_all)
+        _busca_cidade = st.text_input("🔍 Buscar", value="", key="busca_cidade", placeholder="Digite para filtrar...")
+        _cidades_f = [c for c in cidades_all if _busca_cidade.strip().lower() in c.lower()] if _busca_cidade.strip() else cidades_all
+        if st.button("🗑️ Limpar seleção", key="cidade_limpar", use_container_width=True):
+            st.session_state["cidade_selecionados"] = set()
+            st.session_state["cidade_reset"] += 1
+            st.rerun()
+        _r = st.session_state["cidade_reset"]
+        for _c in _cidades_f:
+            if st.checkbox(str(_c), value=(_c in st.session_state["cidade_selecionados"]), key=f"cidade_chk_{_r}_{_c}"):
+                st.session_state["cidade_selecionados"].add(_c)
+            else:
+                st.session_state["cidade_selecionados"].discard(_c)
+        cidades_sel = list(st.session_state["cidade_selecionados"]) or cidades_all
 
     ta_f5 = ta_f4[ta_f4["cidade_nome"].isin(cidades_sel)] if cidades_sel else ta_f4.iloc[0:0]
 
     # ── 6. Fazenda ─────────────────────────────────────────────────────────────
     with st.expander("🏡 Fazenda", expanded=False):
         fazendas_all = sorted(ta_f5["nomeFazenda"].dropna().unique().tolist())
-        fazendas_sel = checkboxes("Fazenda", fazendas_all, prefix="fazenda")
+        if "fazenda_selecionados" not in st.session_state: st.session_state["fazenda_selecionados"] = set()
+        if "fazenda_reset" not in st.session_state: st.session_state["fazenda_reset"] = 0
+        st.session_state["fazenda_selecionados"] &= set(fazendas_all)
+        _busca_fazenda = st.text_input("🔍 Buscar", value="", key="busca_fazenda", placeholder="Digite para filtrar...")
+        _fazendas_f = [c for c in fazendas_all if _busca_fazenda.strip().lower() in c.lower()] if _busca_fazenda.strip() else fazendas_all
+        if st.button("🗑️ Limpar seleção", key="fazenda_limpar", use_container_width=True):
+            st.session_state["fazenda_selecionados"] = set()
+            st.session_state["fazenda_reset"] += 1
+            st.rerun()
+        _r = st.session_state["fazenda_reset"]
+        for _c in _fazendas_f:
+            if st.checkbox(str(_c), value=(_c in st.session_state["fazenda_selecionados"]), key=f"fazenda_chk_{_r}_{_c}"):
+                st.session_state["fazenda_selecionados"].add(_c)
+            else:
+                st.session_state["fazenda_selecionados"].discard(_c)
+        fazendas_sel = list(st.session_state["fazenda_selecionados"]) or fazendas_all
 
     ta_f6 = ta_f5[ta_f5["nomeFazenda"].isin(fazendas_sel)] if fazendas_sel else ta_f5.iloc[0:0]
 
     # ── 7. Responsável ─────────────────────────────────────────────────────────
     with st.expander("👤 Responsável", expanded=False):
         resps_all = sorted(ta_f6["nomeResponsavel"].dropna().unique().tolist())
-        resps_sel = checkboxes("Resp", resps_all, prefix="resp")
+        if "resp_selecionados" not in st.session_state: st.session_state["resp_selecionados"] = set()
+        if "resp_reset" not in st.session_state: st.session_state["resp_reset"] = 0
+        st.session_state["resp_selecionados"] &= set(resps_all)
+        _busca_resp = st.text_input("🔍 Buscar", value="", key="busca_resp", placeholder="Digite para filtrar...")
+        _resps_f = [c for c in resps_all if _busca_resp.strip().lower() in c.lower()] if _busca_resp.strip() else resps_all
+        if st.button("🗑️ Limpar seleção", key="resp_limpar", use_container_width=True):
+            st.session_state["resp_selecionados"] = set()
+            st.session_state["resp_reset"] += 1
+            st.rerun()
+        _r = st.session_state["resp_reset"]
+        for _c in _resps_f:
+            if st.checkbox(str(_c), value=(_c in st.session_state["resp_selecionados"]), key=f"resp_chk_{_r}_{_c}"):
+                st.session_state["resp_selecionados"].add(_c)
+            else:
+                st.session_state["resp_selecionados"].discard(_c)
+        resps_sel = list(st.session_state["resp_selecionados"]) or resps_all
 
     ta_f7 = ta_f6[ta_f6["nomeResponsavel"].isin(resps_sel)] if resps_sel else ta_f6.iloc[0:0]
 
@@ -287,7 +347,40 @@ with st.sidebar:
     # ── 9. Cultivar (dePara) ──────────────────────────────────────────────────
     with st.expander("🌱 Cultivar", expanded=False):
         cultivares_all = sorted(ta_f8["dePara"].dropna().unique().tolist())
-        cultivares_sel = checkboxes("Cult", cultivares_all, prefix="cult")
+
+        # Inicializar set de selecionados no session_state
+        if "cult_selecionados" not in st.session_state:
+            st.session_state["cult_selecionados"] = set()
+
+        # Limpar cultivares que não existem mais nos dados filtrados
+        st.session_state["cult_selecionados"] &= set(cultivares_all)
+
+        _busca_cult = st.text_input("🔍 Buscar cultivar", value="", key="busca_cult",
+                                    placeholder="Digite para filtrar...")
+        _cult_filtrados = [c for c in cultivares_all
+                           if _busca_cult.strip().lower() in c.lower()] if _busca_cult.strip() else cultivares_all
+
+        # Botão de limpeza rápida
+        if "cult_reset" not in st.session_state: st.session_state["cult_reset"] = 0
+        if st.button("🗑️ Limpar seleção", key="cult_limpar", use_container_width=True):
+            st.session_state["cult_selecionados"] = set()
+            st.session_state["cult_reset"] += 1
+            st.rerun()
+
+        # Renderizar checkboxes dos filtrados — mantém estado dos não visíveis
+        _r = st.session_state["cult_reset"]
+        for _c in _cult_filtrados:
+            _checked = st.checkbox(
+                str(_c),
+                value=(_c in st.session_state["cult_selecionados"]),
+                key=f"cult_chk_{_r}_{_c}",
+            )
+            if _checked:
+                st.session_state["cult_selecionados"].add(_c)
+            else:
+                st.session_state["cult_selecionados"].discard(_c)
+
+        cultivares_sel = list(st.session_state["cult_selecionados"]) or cultivares_all
 
     ta_f9 = ta_f8[ta_f8["dePara"].isin(cultivares_sel)] if cultivares_sel else ta_f8.iloc[0:0]
 
@@ -1583,7 +1676,9 @@ else:
     )
     with st.popover(f"📍 Dicionário de locais ({len(df_dic)} locais)", use_container_width=False):
         st.markdown("Código gerado automaticamente · passe o mouse sobre os pontos do gráfico para identificar o local.")
-        st.dataframe(df_dic, hide_index=True, use_container_width=True)
+        _busca_dic = st.text_input("🔍 Buscar", value="", key="busca_dic_lol", placeholder="Código, fazenda, cidade...")
+        _df_dic_f = df_dic[df_dic.apply(lambda r: _busca_dic.strip().lower() in " ".join(r.astype(str).str.lower()), axis=1)] if _busca_dic.strip() else df_dic
+        st.dataframe(_df_dic_f, hide_index=True, use_container_width=True)
 
 st.divider()
 
@@ -1910,18 +2005,26 @@ else:
         # Eixo X em sc/ha real = índice + média geral
         x_scha  = x_idx + media_geral
 
-        # Cores sólidas para linhas — CHECK e DP2 ganham cor forte
-        COR_LINHA_ER = {
-            "CHECK":    "#E67E22",   # laranja sólido
-            "STINE":    "#2976B6",   # azul (já era sólido)
-            "LINHAGEM": "#00FF01",   # verde original
-            "DP2":      "#27AE60",   # verde escuro sólido
-        }
+        # Paleta sem as cores dos status (laranja=CHECK, azul=STINE, verde=DP2, verde neon=LINHAGEM)
+        _PALETA_ER = [
+            "#9B59B6",  # roxo
+            "#E91E63",  # rosa
+            "#00BCD4",  # ciano
+            "#795548",  # marrom
+            "#607D8B",  # azul acinzentado
+            "#FF5722",  # laranja avermelhado
+            "#009688",  # teal
+            "#673AB7",  # violeta
+            "#F06292",  # rosa claro
+            "#4DB6AC",  # turquesa
+            "#A1887F",  # marrom claro
+            "#78909C",  # cinza azulado
+        ]
 
-        for cultivar in sel_cultivares:
+        for _i, cultivar in enumerate(sel_cultivares):
             grp    = df_er[df_er["dePara"] == cultivar]
             status = grp["status_material"].iloc[0]
-            cor    = COR_LINHA_ER.get(status, "#888888")
+            cor    = _PALETA_ER[_i % len(_PALETA_ER)]
 
             y      = grp["sc_ha"].values
             x      = grp["idx_amb"].values
@@ -1933,24 +2036,9 @@ else:
             s2_val  = row_res["s2"].iloc[0] if not row_res.empty else np.nan
             pi_val  = row_res["Pi"].iloc[0] if not row_res.empty else np.nan
 
-            y_line = a + b * x_idx  # regressão sobre índice
+            y_line = a + b * x_idx
 
-            # Reta de regressão — X em sc/ha real
-            fig_reg.add_trace(go_plt.Scatter(
-                x=x_scha, y=y_line,
-                mode="lines",
-                name=cultivar,
-                line=dict(color=cor, width=2),
-                legendgroup=cultivar,
-                hovertemplate=(
-                    f"<b>{cultivar}</b><br>"
-                    f"b: {b:.3f}<br>"
-                    f"s²: {s2_val:.3f}<br>"
-                    f"Pi: {pi_val:.1f}<extra></extra>"
-                ),
-            ))
-
-            # Pontos observados — X = média do local em sc/ha
+            # Pontos — sem entrada na legenda, vinculados ao legendgroup
             x_obs = grp["idx_amb"].values + media_geral
             fig_reg.add_trace(go_plt.Scatter(
                 x=x_obs,
@@ -1958,13 +2046,27 @@ else:
                 mode="markers",
                 name=cultivar,
                 marker=dict(color=cor, size=7, opacity=0.6,
-                            line=dict(color=COR_BORDA.get(status, "#888"), width=1)),
+                            line=dict(color="#FFFFFF", width=0.8)),
                 legendgroup=cultivar,
                 showlegend=False,
                 hovertemplate=(
                     f"<b>{cultivar}</b><br>"
                     "Média do local: %{x:.1f} sc/ha<br>"
                     "Produtividade: %{y:.1f} sc/ha<extra></extra>"
+                ),
+            ))
+
+            # Reta — única entrada na legenda, controla os dois ao clicar
+            fig_reg.add_trace(go_plt.Scatter(
+                x=x_scha, y=y_line,
+                mode="lines",
+                name=cultivar,
+                line=dict(color=cor, width=2),
+                legendgroup=cultivar,
+                showlegend=True,
+                hovertemplate=(
+                    f"<b>{cultivar}</b><br>"
+                    f"b: {b:.3f} · s²: {s2_val:.3f} · Pi: {pi_val:.1f}<extra></extra>"
                 ),
             ))
 
@@ -1988,8 +2090,11 @@ else:
             xaxis_title="Produtividade média do ambiente (sc/ha)",
             yaxis_title="Produtividade do cultivar (sc/ha)",
             height=500,
-            legend=dict(orientation="v", x=1.01, y=1, xanchor="left",
-                        font=dict(size=13, color="#111111")),
+            legend=dict(
+                orientation="v", x=1.01, y=1, xanchor="left",
+                font=dict(size=13, color="#111111"),
+                itemsizing="constant",
+            ),
             margin=dict(t=40, b=60, l=60, r=160),
             plot_bgcolor="#FFFFFF",
             paper_bgcolor="#FFFFFF",
@@ -2494,7 +2599,9 @@ df_dic_hm = (
 )
 with st.popover(f"📍 Dicionário de locais ({len(df_dic_hm)} locais)", use_container_width=False):
     st.markdown("Referência dos códigos exibidos nas colunas do heatmap.")
-    st.dataframe(df_dic_hm, hide_index=True, use_container_width=True)
+    _busca_dic_hm = st.text_input("🔍 Buscar", value="", key="busca_dic_hm", placeholder="Código, fazenda, cidade...")
+    _df_dic_hm_f = df_dic_hm[df_dic_hm.apply(lambda r: _busca_dic_hm.strip().lower() in " ".join(r.astype(str).str.lower()), axis=1)] if _busca_dic_hm.strip() else df_dic_hm
+    st.dataframe(_df_dic_hm_f, hide_index=True, use_container_width=True)
 
 
 st.markdown(
