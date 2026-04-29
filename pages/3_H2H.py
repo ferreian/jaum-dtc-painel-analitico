@@ -937,15 +937,15 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                     import folium
                     from streamlit_folium import st_folium
 
-                    # Escala de cores por diferença em sc/ha — empate = ±1 sc/ha
+                    # Escala alinhada com donut — extremos puros, intermediários em gradiente
                     def _cor_diff(diff):
-                        if   diff >= 10: return "#1a6e2e"   # verde escuro  ≥ +10
-                        elif diff >=  5: return "#27AE60"   # verde         ≥ +5
-                        elif diff >=  2: return "#82C784"   # verde claro   ≥ +2
-                        elif diff >= -1: return "#D3D3D3"   # cinza         empate (±1)
-                        elif diff >= -5: return "#F4A460"   # laranja       < −2
-                        elif diff >=-10: return "#E74C3C"   # vermelho      < −5
-                        else:            return "#8B0000"   # vermelho esc  ≤ −10
+                        if   diff >= 10: return "#27AE60"   # verde puro donut      ≥ +10
+                        elif diff >=  5: return "#52C97A"   # verde médio           ≥ +5
+                        elif diff >=  2: return "#A8E6BC"   # verde claro           ≥ +2
+                        elif diff >= -1: return "#FFFF00"   # amarelo donut empate  ±1
+                        elif diff >= -5: return "#FF9900"   # amarelo→vermelho      < −2
+                        elif diff >=-10: return "#FF4400"   # laranja→vermelho      < −5
+                        else:            return "#FF0000"   # vermelho puro donut   ≤ −10
 
                     # Símbolo por safra
                     _safras_unicas = sorted(df_map["safra"].dropna().unique().tolist())
@@ -963,10 +963,36 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                         tiles="OpenStreetMap",
                     )
 
+                    # SVG por símbolo e cor
+                    def _svg_circulo(cor):
+                        return f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+                          <circle cx="12" cy="12" r="10" fill="{cor}" stroke="white" stroke-width="2"/>
+                        </svg>'''
+
+                    def _svg_quadrado(cor):
+                        return f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+                          <rect x="2" y="2" width="20" height="20" rx="3" fill="{cor}" stroke="white" stroke-width="2"/>
+                        </svg>'''
+
+                    def _svg_estrela(cor):
+                        return f'''<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+                          <polygon points="13,1 16.5,9.5 26,10.5 19.5,17 21.5,26 13,21.5 4.5,26 6.5,17 0,10.5 9.5,9.5"
+                                   fill="{cor}" stroke="white" stroke-width="1.5"/>
+                        </svg>'''
+
+                    _SVG_FN = {
+                        "circle":  _svg_circulo,
+                        "square":  _svg_quadrado,
+                        "star":    _svg_estrela,
+                    }
+
                     for _, row in df_map.iterrows():
                         _cor   = _cor_diff(row["diff_sc"])
                         _safra = str(row.get("safra", ""))
                         _icon  = _simbolo_safra.get(_safra, "circle")
+                        _svg   = _SVG_FN.get(_icon, _svg_circulo)(_cor)
+                        _size  = 26 if _icon == "star" else 24
+
                         popup  = folium.Popup(
                             f"<b>{row['nomeFazenda']}</b><br>"
                             f"{row['cidade_nome']} — {row['estado_sigla']}<br>"
@@ -976,40 +1002,26 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                             f"<b>Diferença:</b> {row['diff_sc']:+.1f} sc/ha",
                             max_width=260,
                         )
-                        if _icon == "circle":
-                            folium.CircleMarker(
-                                location=[row["latitude"], row["longitude"]],
-                                radius=9,
-                                color="#FFFFFF",
-                                weight=1.5,
-                                fill=True,
-                                fill_color=_cor,
-                                fill_opacity=0.92,
-                                popup=popup,
-                                tooltip=f"{row['nomeFazenda']} · {_safra} · {row['diff_sc']:+.1f} sc/ha",
-                            ).add_to(m)
-                        else:
-                            folium.Marker(
-                                location=[row["latitude"], row["longitude"]],
-                                popup=popup,
-                                tooltip=f"{row['nomeFazenda']} · {_safra} · {row['diff_sc']:+.1f} sc/ha",
-                                icon=folium.Icon(
-                                    color="white",
-                                    icon_color=_cor,
-                                    icon=_icon,
-                                    prefix="fa",
-                                ),
-                            ).add_to(m)
+                        folium.Marker(
+                            location=[row["latitude"], row["longitude"]],
+                            popup=popup,
+                            tooltip=f"{row['nomeFazenda']} · {_safra} · {row['diff_sc']:+.1f} sc/ha",
+                            icon=folium.DivIcon(
+                                html=_svg,
+                                icon_size=(_size, _size),
+                                icon_anchor=(_size//2, _size//2),
+                            ),
+                        ).add_to(m)
 
                     # Legenda HTML
                     _legenda_cores = [
-                        ("≥ +10 sc/ha", "#1a6e2e"),
-                        ("≥ +5 sc/ha",  "#27AE60"),
-                        ("≥ +2 sc/ha",  "#82C784"),
-                        ("±1 sc/ha (empate)", "#D3D3D3"),
-                        ("< −2 sc/ha",  "#F4A460"),
-                        ("< −5 sc/ha",  "#E74C3C"),
-                        ("≤ −10 sc/ha", "#8B0000"),
+                        ("≥ +10 sc/ha",       "#27AE60"),
+                        ("≥ +5 sc/ha",        "#52C97A"),
+                        ("≥ +2 sc/ha",        "#A8E6BC"),
+                        ("±1 sc/ha (empate)", "#FFFF00"),
+                        ("< −2 sc/ha",        "#FF9900"),
+                        ("< −5 sc/ha",        "#FF4400"),
+                        ("≤ −10 sc/ha",       "#FF0000"),
                     ]
                     _leg_cores_html = "".join([
                         f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
@@ -1017,11 +1029,16 @@ Confronto direto entre **Produto 1** e **Produto 2** nos locais onde **ambos for
                         f'<span style="font-size:11px;color:#374151;">{lbl}</span></div>'
                         for lbl, c in _legenda_cores
                     ])
+                    _SIMBOLO_LEGENDA = {
+                        "circle":  "●",
+                        "square":  "■",
+                        "star":    "★",
+                    }
                     _leg_safras_html = "".join([
                         f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
-                        f'<span style="font-size:12px;">{"⭐" if s == "star" else "●" if s == "circle" else "■"}</span>'
+                        f'<span style="font-size:16px;color:#374151;">{_SIMBOLO_LEGENDA.get(_simbolo_safra.get(sf,"circle"),"●")}</span>'
                         f'<span style="font-size:11px;color:#374151;">{sf}</span></div>'
-                        for sf, s in _simbolo_safra.items()
+                        for sf in _safras_unicas
                     ])
                     _legenda_html = f"""
                     <div style='background:white;padding:10px 14px;border-radius:8px;
@@ -1264,6 +1281,8 @@ As barras mostram a diferença entre os dois cultivares. Este gráfico mostra co
                 .set_index("cod_fazenda")
             )
 
+            # Primeira passagem: pontos e retas — segunda: anotações com desvio vertical
+            _retas_info = []
             for _df, _cultivar, _cor in [(_df1, p1_t3, _cor1), (_df2, p2_t3, _cor2)]:
                 _df = _df.join(_meta_loc, on="cod_fazenda", how="left")
                 _x = _df["media_local"].values
@@ -1298,7 +1317,6 @@ As barras mostram a diferença entre os dois cultivares. Este gráfico mostra co
                         _ss_res = np.sum((_y - _y_hat) ** 2)
                         _ss_tot = np.sum((_y - _y.mean()) ** 2)
                         _r2     = 1 - _ss_res / _ss_tot if _ss_tot > 0 else np.nan
-
                         fig_dev.add_trace(go_plt.Scatter(
                             x=_x_line, y=_y_line,
                             mode="lines",
@@ -1306,15 +1324,41 @@ As barras mostram a diferença entre os dois cultivares. Este gráfico mostra co
                             showlegend=False,
                             hoverinfo="skip",
                         ))
-                        fig_dev.add_annotation(
-                            x=_x_line[-1], y=_y_line[-1],
-                            text=f"<b>{_cultivar}</b><br>b={_slope:+.3f} · R²={_r2:.2f}",
-                            showarrow=False, xanchor="left",
-                            font=dict(size=12, color=_cor, weight="bold"),
-                            bgcolor="rgba(255,255,255,0.8)",
-                        )
+                        _retas_info.append({
+                            "cultivar": _cultivar, "cor": _cor,
+                            "x_end": _x_line[-1], "y_end": _y_line[-1],
+                            "slope": _slope, "r2": _r2,
+                        })
                     except Exception:
                         pass
+
+            # Posicionar anotações — alternando vertical se próximas
+            if len(_retas_info) == 2:
+                _diff_y = abs(_retas_info[0]["y_end"] - _retas_info[1]["y_end"])
+                if _diff_y < 4:
+                    # Maior fica acima, menor fica abaixo
+                    _ay = [-35, 20] if _retas_info[0]["y_end"] >= _retas_info[1]["y_end"] else [20, -35]
+                else:
+                    _ay = [10, 10]
+            else:
+                _ay = [10] * len(_retas_info)
+
+            for _ri, _info in enumerate(_retas_info):
+                fig_dev.add_annotation(
+                    x=_info["x_end"], y=_info["y_end"],
+                    text=f"<b>{_info['cultivar']}</b><br>b={_info['slope']:+.3f} · R²={_info['r2']:.2f}",
+                    showarrow=True,
+                    arrowhead=0,
+                    arrowcolor=_info["cor"],
+                    arrowwidth=1.5,
+                    ax=25, ay=_ay[_ri],
+                    xanchor="left",
+                    font=dict(size=12, color=_info["cor"], weight="bold"),
+                    bgcolor="rgba(255,255,255,0.85)",
+                    bordercolor=_info["cor"],
+                    borderwidth=1,
+                    borderpad=3,
+                )
 
             # Linha y=0
             fig_dev.add_hline(y=0, line=dict(color="#444444", width=1.5, dash="dot"))
