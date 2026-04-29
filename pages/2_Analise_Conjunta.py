@@ -2118,9 +2118,198 @@ else:
             "Pontos espalhados = comportamento imprevisível (s² alto)."
         )
 
+        # ── Réguas de adaptabilidade por cultivar ─────────────────────────────
+        st.markdown("#### Régua de Adaptabilidade")
+        st.caption("Posição do marcador baseada no coeficiente b da regressão · b = 1 = referência (centro)")
+
+        def _regua_svg(cultivar, b_val, media_sc, n_loc, cor_cult, W=580):
+            b_pct  = max(0.0, min(1.0, (b_val) / 2.0))
+            H      = 130
+            pad_l, pad_r = 50, 50
+            bar_w  = W - pad_l - pad_r
+            bar_h  = 30
+            bar_y  = 62
+            mx     = pad_l + b_pct * bar_w
+
+            if b_val < 0.7:   classe = "Pouco sensível ao ambiente — produção estável entre locais"
+            elif b_val < 0.9: classe = "Levemente estável — responde menos às variações do ambiente"
+            elif b_val < 1.1: classe = "Acompanha o ambiente — comportamento médio do conjunto"
+            elif b_val < 1.3: classe = "Responsivo — responde proporcionalmente mais às melhorias do ambiente"
+            else:             classe = "Altamente responsivo — maior amplitude de variação entre ambientes bons e ruins"
+
+            gid = cultivar.replace(" ","_").replace("/","_")
+            return f"""<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;">
+  <defs>
+    <linearGradient id="g_{gid}" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#E74C3C"/>
+      <stop offset="30%"  stop-color="#E67E22"/>
+      <stop offset="50%"  stop-color="#F1C40F"/>
+      <stop offset="70%"  stop-color="#82C341"/>
+      <stop offset="100%" stop-color="#27AE60"/>
+    </linearGradient>
+    <filter id="sh_{gid}"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.15)"/></filter>
+  </defs>
+  <text x="{W//2}" y="18" text-anchor="middle" font-family="Helvetica Neue,sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">{cultivar}</text>
+  <text x="{W//2}" y="36" text-anchor="middle" font-family="Helvetica Neue,sans-serif" font-size="13" fill="#1A1A1A">b = {b_val:.3f}  ·  {media_sc:.1f} sc/ha  ·  {n_loc} locais</text>
+  <rect x="{pad_l}" y="{bar_y}" width="{bar_w}" height="{bar_h}" rx="15" ry="15" fill="url(#g_{gid})" filter="url(#sh_{gid})"/>
+  <line x1="{pad_l + bar_w//2}" y1="{bar_y+4}" x2="{pad_l + bar_w//2}" y2="{bar_y+bar_h-4}" stroke="white" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+  <polygon points="{mx},{bar_y-3} {mx-10},{bar_y-16} {mx+10},{bar_y-16}" fill="{cor_cult}" stroke="white" stroke-width="1.5"/>
+  <circle cx="{mx}" cy="{bar_y-3}" r="3.5" fill="white"/>
+  <text x="{W//2}" y="{bar_y+bar_h+18}" text-anchor="middle" font-family="Helvetica Neue,sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">{classe}</text>
+</svg>"""
+
+        def _regua_referencia_svg(W=900):
+            H = 140
+            pad_l, pad_r = 80, 80
+            bar_w = W - pad_l - pad_r
+            bar_h = 32
+            bar_y = 60
+            cx    = pad_l + bar_w // 2
+            gid   = "ref_ruler"
+            zonas = [
+                (0.0,   pad_l,                  "Pouco\nsensível",   "#E74C3C"),
+                (0.375, pad_l + bar_w*0.375,    "Estável",           "#E67E22"),
+                (0.5,   cx,                     "Referência\nb=1",   "#B8860B"),
+                (0.625, pad_l + bar_w*0.625,    "Responsivo",        "#82C341"),
+                (1.0,   pad_l + bar_w,          "Altamente\nresponsivo", "#27AE60"),
+            ]
+            ticks = ""
+            for _, tx, lbl, cor in zonas:
+                lines = lbl.split("\n")
+                y0 = bar_y + bar_h + 14
+                for li, ln in enumerate(lines):
+                    ticks += f'<text x="{tx}" y="{y0 + li*15}" text-anchor="middle" font-family="Helvetica Neue,sans-serif" font-size="12" fill="{cor}" font-weight="700">{ln}</text>'
+                ticks += f'<line x1="{tx}" y1="{bar_y+bar_h}" x2="{tx}" y2="{bar_y+bar_h+8}" stroke="{cor}" stroke-width="2"/>'
+
+            return f"""<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;">
+  <defs>
+    <linearGradient id="{gid}" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#E74C3C"/>
+      <stop offset="30%"  stop-color="#E67E22"/>
+      <stop offset="50%"  stop-color="#F1C40F"/>
+      <stop offset="70%"  stop-color="#82C341"/>
+      <stop offset="100%" stop-color="#27AE60"/>
+    </linearGradient>
+    <filter id="sh_ref"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.12)"/></filter>
+  </defs>
+  <text x="{W//2}" y="20" text-anchor="middle" font-family="Helvetica Neue,sans-serif" font-size="14" font-weight="700" fill="#1A1A1A">Como interpretar a régua</text>
+  <text x="{pad_l}" y="42" text-anchor="start" font-family="Helvetica Neue,sans-serif" font-size="12" fill="#6B7280">Menos sensível ao ambiente</text>
+  <text x="{W-pad_r}" y="42" text-anchor="end" font-family="Helvetica Neue,sans-serif" font-size="12" fill="#6B7280">Mais sensível ao ambiente</text>
+  <rect x="{pad_l}" y="{bar_y}" width="{bar_w}" height="{bar_h}" rx="16" ry="16" fill="url(#{gid})" filter="url(#sh_ref)"/>
+  <line x1="{cx}" y1="{bar_y+5}" x2="{cx}" y2="{bar_y+bar_h-5}" stroke="white" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+  {ticks}
+</svg>"""
+
+        # ── Régua de referência centralizada ──────────────────────────────────
+        import streamlit.components.v1 as _comp
+
+        with st.popover("ℹ️ Como interpretar · Régua de Adaptabilidade", use_container_width=False):
+            st.markdown("""
+**📌 O que esta régua mostra**
+
+A régua posiciona cada cultivar no espectro de **sensibilidade ao ambiente**, baseado no coeficiente **b** da Regressão de Eberhart & Russell.
+
+**O que é o coeficiente b?**
+É a inclinação da reta de regressão — mede o quanto a produtividade do cultivar varia conforme o ambiente melhora ou piora.
+
+**Como interpretar cada posição:**
+
+| Posição | b | Significado prático |
+|---------|---|---------------------|
+| 🔴 Muito uniforme | b < 0.7 | Pouco sensível ao ambiente — produção estável entre locais |
+| 🟠 Uniforme | b 0.7–0.9 | Levemente estável — responde menos às variações do ambiente |
+| 🟡 Referência | b ≈ 1.0 | Acompanha o ambiente — comportamento médio do conjunto |
+| 🟢 Responsivo | b 1.1–1.3 | Responsivo — responde proporcionalmente mais às melhorias do ambiente |
+| 🟢 Altamente responsivo | b > 1.3 | Altamente responsivo — maior amplitude de variação entre ambientes bons e ruins |
+
+**Importante:**
+O b **não mede produtividade** — um cultivar com b baixo pode ser muito produtivo ou pouco produtivo. Combine sempre com a média de sc/ha para uma recomendação completa.
+
+> Exemplo prático: se você atua em regiões heterogêneas com muita variação de ambiente, prefira cultivares com b próximo de 1 ou menor. Se atua em áreas de alto potencial, cultivares com b > 1 tendem a se destacar mais.
+""")
+
+        _comp.html(f"<div style='display:flex;justify-content:center;padding:8px 0 4px;'>{_regua_referencia_svg()}</div>", height=155)
+
+        st.markdown("<div style='margin:8px 0;'></div>", unsafe_allow_html=True)
+
+        # ── Calcular b por cultivar ────────────────────────────────────────────
+        _b_map = {}
+        for _cult in sel_cultivares:
+            _grp = df_er[df_er["dePara"] == _cult]
+            if len(_grp) >= 2:
+                _y = _grp["sc_ha"].values
+                _x = _grp["idx_amb"].values
+                _X = np.column_stack([np.ones(len(_y)), _x])
+                _beta, _, _, _ = np.linalg.lstsq(_X, _y, rcond=None)
+                _b_map[_cult] = {
+                    "b":     _beta[1],
+                    "media": _grp["sc_ha"].mean(),
+                    "n":     _grp["cod_fazenda"].nunique(),
+                }
+
+        # ── Renderizar réguas 2 por linha com download individual ─────────────
+        _cults_reg = [c for c in sel_cultivares if c in _b_map]
+
+        for _i in range(0, len(_cults_reg), 2):
+            _par  = _cults_reg[_i:_i+2]
+            _cols = st.columns(len(_par))
+            for _ci, _cult in enumerate(_par):
+                _info = _b_map[_cult]
+                _cor  = _PALETA_ER[sel_cultivares.index(_cult) % len(_PALETA_ER)]
+                _svg  = _regua_svg(_cult, _info["b"], _info["media"], _info["n"], _cor)
+                # SVG para download: régua de referência + régua individual
+                _svg_dl = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 250" width="600" height="250" style="background:white;"><g transform="translate(0,0)">{_regua_referencia_svg(W=600)}</g><g transform="translate(0,140)">{_regua_svg(_cult, _info["b"], _info["media"], _info["n"], _cor, W=600)}</g></svg>'
+                _nome_arquivo = _cult.replace(" ", "_").replace("/", "_")
+                with _cols[_ci]:
+                    _nome_arquivo = _cult.replace(" ", "_").replace("/", "_")
+                    _svg_id  = f"regua_{_nome_arquivo}"
+                    _svg_com_id = _svg.replace("<svg ", f'<svg id="svg_{_svg_id}" ', 1)
+                    _html_regua = f"""
+<div id="{_svg_id}" style="background:#FFFFFF;padding:12px 8px 8px;border-radius:8px;width:100%;box-sizing:border-box;">
+  {_svg_com_id}
+</div>
+<div style="margin-top:6px;">
+  <button onclick="(function(){{
+    var svgEl = document.getElementById('svg_{_svg_id}');
+    var svgData = new XMLSerializer().serializeToString(svgEl);
+    var encoded = btoa(unescape(encodeURIComponent(svgData)));
+    var url = 'data:image/svg+xml;base64,' + encoded;
+    var img = new Image();
+    img.onload = function(){{
+      var canvas = document.createElement('canvas');
+      canvas.width  = svgEl.viewBox.baseVal.width  * 3;
+      canvas.height = svgEl.viewBox.baseVal.height * 3;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      var a = document.createElement('a');
+      a.download = 'regua_{_nome_arquivo}.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    }};
+    img.src = url;
+  }})();"
+    style="background:#F3F4F6;color:#374151;border:1px solid #D1D5DB;
+           padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;
+           cursor:pointer;font-family:'Helvetica Neue',sans-serif;">
+    ⬇️ Baixar
+  </button>
+</div>"""
+                    _comp.html(_html_regua, height=195)
+
     st.divider()
     st.markdown("#### Dispersão por Quadrantes — Adaptabilidade × Estabilidade")
     st.caption("Posição = b (adaptabilidade) × s² (estabilidade) · Tamanho do ponto = superioridade Lin & Binns (maior = melhor).")
+
+    st.info(
+        "💡 **As cores aqui têm sentido diferente da Régua de Adaptabilidade.** "
+        "Na régua, vermelho e verde indicam apenas *onde* o cultivar está no espectro de sensibilidade — nenhum extremo é ruim. "
+        "Aqui, as cores indicam o **desempenho combinado**: verde = responsivo E estável (ideal) · "
+        "vermelho = pouco responsivo E imprevisível (atenção). "
+        "O que muda é o **s²** — cultivares com s² alto são difíceis de recomendar por serem imprevisíveis entre locais.",
+        icon=None,
+    )
 
     with st.popover("ℹ️ Como interpretar · Quadrantes", use_container_width=False):
         st.markdown("""
