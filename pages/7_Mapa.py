@@ -568,6 +568,54 @@ def _geocod_ibge(p):
 
 # ── FUNÇÃO MAPA MACRO/MICRO ───────────────────────────────────────────────────
 # ── FUNÇÃO MAPA MACRO/MICRO ───────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner="Processando municípios...")
+def _processar_geojson_mun(_cache_key, col_grupo):
+    """Processa GeoJSON municipal uma vez — centroides + mapeamento IBGE. Cache 1h."""
+    if geojson_mun is None or df_mun_regiao is None:
+        return pd.DataFrame(), {}
+
+    rows_c, ibge_por_reg, ibge_sem = [], {}, []
+
+    for feat in geojson_mun["features"]:
+        _p = feat.get("properties", {})
+        _ibge = str(_p.get("ibge_norm", "")).strip().zfill(7)
+        if not _ibge:
+            continue
+
+        _match = df_mun_regiao[df_mun_regiao["ibge_norm"] == _ibge]
+        _reg = _match.iloc[0][col_grupo] if not _match.empty else None
+        if _reg == "Não Identificado" or (pd.isna(_reg) if _reg is not None else False):
+            _reg = None
+
+        if _reg:
+            ibge_por_reg.setdefault(_reg, []).append(_ibge)
+        else:
+            ibge_sem.append(_ibge)
+
+        # Centroide
+        try:
+            _cf = []
+            def _flat(c):
+                if isinstance(c, list) and len(c) > 0:
+                    if isinstance(c[0], (int, float)): _cf.append(c)
+                    else:
+                        for x in c: _flat(x)
+            _flat(feat.get("geometry", {}).get("coordinates", []))
+            if _cf and _reg:
+                rows_c.append({"regiao": _reg,
+                                "lat": sum(c[1] for c in _cf)/len(_cf),
+                                "lon": sum(c[0] for c in _cf)/len(_cf)})
+        except Exception:
+            pass
+
+    df_coords = pd.DataFrame()
+    if rows_c:
+        df_coords = (pd.DataFrame(rows_c)
+                     .groupby("regiao")[["lat","lon"]].mean().reset_index())
+
+    return df_coords, {"ibge_por_reg": ibge_por_reg, "ibge_sem": ibge_sem}
+
 def _mapa_regiao(col_grupo, label_nivel, fator_cor=1.0):
     df_reg = _agg(df_cult, col_grupo)
     if df_reg.empty:
@@ -589,52 +637,10 @@ def _mapa_regiao(col_grupo, label_nivel, fator_cor=1.0):
     secao_titulo(label_nivel, f"{cultivar_sel} — melhor em {_melhor_reg}",
                  f"{metrica} · {', '.join(safras_sel)}")
 
-    # ── Centroides por região ────────────────────────────────────────────────
-    df_coords = pd.DataFrame()
-    if geojson_mun is not None and df_mun_regiao is not None:
-        _rows_c = []
-        for feat in geojson_mun["features"]:
-            _p = feat.get("properties", {})
-            _ibge = str(_p.get("ibge_norm", "")).strip().zfill(7)
-            if not _ibge:
-                continue
-
-            _match = df_mun_regiao[df_mun_regiao["ibge_norm"] == _ibge]
-            if _match.empty:
-                continue
-
-            _reg = _match.iloc[0][col_grupo]
-            if pd.isna(_reg) or _reg == "Não Identificado":
-                continue
-
-            try:
-                _geom = feat.get("geometry", {})
-                _coords_flat = []
-
-                def _flatten(c):
-                    if isinstance(c, list) and len(c) > 0:
-                        if isinstance(c[0], (int, float)):
-                            _coords_flat.append(c)
-                        else:
-                            for x in c:
-                                _flatten(x)
-
-                _flatten(_geom.get("coordinates", []))
-
-                if _coords_flat:
-                    _clon = sum(c[0] for c in _coords_flat) / len(_coords_flat)
-                    _clat = sum(c[1] for c in _coords_flat) / len(_coords_flat)
-                    _rows_c.append({"regiao": _reg, "lat": _clat, "lon": _clon})
-            except Exception:
-                continue
-
-        if _rows_c:
-            df_coords = (
-                pd.DataFrame(_rows_c)
-                .groupby("regiao")[["lat", "lon"]]
-                .mean()
-                .reset_index()
-            )
+    # ── Centroides e mapeamento IBGE — cacheados ─────────────────────────────
+    _cache_result = _processar_geojson_mun(col_grupo, col_grupo)
+    df_coords     = _cache_result[0]
+    _ibge_cache   = _cache_result[1]
 
     # fallback: média das fazendas
     if df_coords.empty and "latitude" in df_cult.columns and "longitude" in df_cult.columns:
@@ -654,28 +660,8 @@ def _mapa_regiao(col_grupo, label_nivel, fator_cor=1.0):
         _fig = go.Figure()
 
         if geojson_mun is not None and df_mun_regiao is not None:
-            # ── Mapeamento robusto por IBGE ─────────────────────────────────
-            _ibge_por_reg = {}
-            _ibge_sem = []
-
-            for feat in geojson_mun["features"]:
-                _p = feat.get("properties", {})
-                _ibge = str(_p.get("ibge_norm", "")).strip().zfill(7)
-
-                if not _ibge:
-                    continue
-
-                _match = df_mun_regiao[df_mun_regiao["ibge_norm"] == _ibge]
-                _reg = _match.iloc[0][col_grupo] if not _match.empty else None
-
-                if _reg == "Não Identificado" or (pd.isna(_reg) if _reg is not None else False):
-                    _reg = None
-
-                if _reg:
-                    _ibge_por_reg.setdefault(_reg, []).append(_ibge)
-                else:
-                    _ibge_sem.append(_ibge)
-
+            _ibge_por_reg = _ibge_cache.get("ibge_por_reg", {})
+            _ibge_sem     = _ibge_cache.get("ibge_sem", [])
             _gj = geojson_mun
 
             def _desbotar(hex_cor, fator=0.6):
