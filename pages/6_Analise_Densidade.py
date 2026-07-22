@@ -424,6 +424,10 @@ col_map = {
     "notaAC":              "Acamamento",
     "dias_ate_DMF":        "Ciclo (dias)",
     "pesoMilGraos_corrigido": "PMG (g)",
+    "media_VTS":           "Vagens Sup. (n)",
+    "media_VTM":           "Vagens Méd. (n)",
+    "media_VTI":           "Vagens Inf. (n)",
+    "media_totalVagens":   "Total Vagens (n)",
     # ── Doenças — nota e classificação ───────────────────────────────────────
     "notaPhytophthora":        "Phytophthora (nota)",
     "class_notaPhytophthora":  "Phytophthora (class)",
@@ -1875,9 +1879,9 @@ else:
 
   </div>
 
-  <!-- Rodapé: sc/ha · Acamamento · Engalhamento -->
-  <div style="display:flex;justify-content:center;gap:32px;
-              margin-top:12px;padding-top:10px;border-top:1px solid #E5E7EB;">
+  <!-- Rodapé: sc/ha · Acamamento · Engalhamento · Total Vagens -->
+  <div style="display:flex;justify-content:center;gap:24px;
+              margin-top:12px;padding-top:10px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
     <div style="text-align:center;">
       <div style="font-size:22px;font-weight:800;color:{borda};line-height:1;">{_fmt_ep(v_sc)}</div>
       <div style="font-size:10px;color:#4B5563;margin-top:3px;">sc/ha médio</div>
@@ -1890,6 +1894,7 @@ else:
       <div style="font-size:22px;font-weight:800;color:#1A1A1A;line-height:1;">{_fmt_ep(v_eng)}</div>
       <div style="font-size:10px;color:#4B5563;margin-top:3px;">Ramos Reprodutivos</div>
     </div>
+    {'<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#1A1A1A;line-height:1;">' + (str(round(_tot,1)) if _tot > 0 else "—") + '</div><div style="font-size:10px;color:#4B5563;margin-top:3px;">Total Vagens</div></div>' if not sem_vagens else ''}
   </div>
 
 </div>"""
