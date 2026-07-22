@@ -157,19 +157,59 @@ def _carregar_geojsons_v3():
         except Exception:
             df_reg = None
 
-    return gj_estados, gj_mun, df_reg
+    # Pré-computar mapeamento ibge→macro e ibge→micro (evita loop pesado depois)
+    df_ibge_macro, df_ibge_micro = pd.DataFrame(), pd.DataFrame()
+    if gj_mun is not None and df_reg is not None and "ibge_norm" in df_reg.columns:
+        _rows_macro, _rows_micro, _rows_c_macro, _rows_c_micro = [], [], [], []
+        for feat in gj_mun["features"]:
+            _p  = feat.get("properties", {})
+            _ib = _p.get("ibge_norm","")
+            if not _ib: continue
+            _match = df_reg[df_reg["ibge_norm"] == _ib]
+            _macro = _match.iloc[0]["regiao_macro"] if not _match.empty else None
+            _micro = _match.iloc[0]["regiao_micro"] if not _match.empty else None
+            if _macro == "Não Identificado": _macro = None
+            if _micro == "Não Identificado": _micro = None
+            _rows_macro.append({"ibge_norm":_ib,"regiao":_macro})
+            _rows_micro.append({"ibge_norm":_ib,"regiao":_micro})
+            # Centroide
+            try:
+                _cf = []
+                def _fl(c):
+                    if isinstance(c,list) and len(c)>0:
+                        if isinstance(c[0],(int,float)): _cf.append(c)
+                        else:
+                            for x in c: _fl(x)
+                _fl(feat.get("geometry",{}).get("coordinates",[]))
+                if _cf:
+                    _lt = sum(c[1] for c in _cf)/len(_cf)
+                    _ln = sum(c[0] for c in _cf)/len(_cf)
+                    if _macro: _rows_c_macro.append({"regiao":_macro,"lat":_lt,"lon":_ln})
+                    if _micro: _rows_c_micro.append({"regiao":_micro,"lat":_lt,"lon":_ln})
+            except Exception:
+                pass
+        df_ibge_macro = pd.DataFrame(_rows_macro) if _rows_macro else pd.DataFrame()
+        df_ibge_micro = pd.DataFrame(_rows_micro) if _rows_micro else pd.DataFrame()
+        if _rows_c_macro:
+            _dc_macro = pd.DataFrame(_rows_c_macro).groupby("regiao")[["lat","lon"]].mean().reset_index()
+            df_ibge_macro = df_ibge_macro.merge(_dc_macro, on="regiao", how="left")
+        if _rows_c_micro:
+            _dc_micro = pd.DataFrame(_rows_c_micro).groupby("regiao")[["lat","lon"]].mean().reset_index()
+            df_ibge_micro = df_ibge_micro.merge(_dc_micro, on="regiao", how="left")
 
-geojson_estados, geojson_mun, df_mun_regiao = _carregar_geojsons_v3()
+    return gj_estados, gj_mun, df_reg, df_ibge_macro, df_ibge_micro
+
+geojson_estados, geojson_mun, df_mun_regiao, _df_ibge_macro, _df_ibge_micro = _carregar_geojsons_v3()
 
 # Garantir cache atualizado com ibge_norm
 if (geojson_mun is not None and
         geojson_mun["features"] and
         "ibge_norm" not in geojson_mun["features"][0].get("properties",{})):
     _carregar_geojsons_v3.clear()
-    geojson_estados, geojson_mun, df_mun_regiao = _carregar_geojsons_v3()
+    geojson_estados, geojson_mun, df_mun_regiao, _df_ibge_macro, _df_ibge_micro = _carregar_geojsons_v3()
 if df_mun_regiao is not None and "ibge_norm" not in df_mun_regiao.columns:
     _carregar_geojsons_v3.clear()
-    geojson_estados, geojson_mun, df_mun_regiao = _carregar_geojsons_v3()
+    geojson_estados, geojson_mun, df_mun_regiao, _df_ibge_macro, _df_ibge_micro = _carregar_geojsons_v3()
 
 # Diagnóstico de carregamento — visível na sidebar
 with st.sidebar:
@@ -569,40 +609,16 @@ def _geocod_ibge(p):
 # ── FUNÇÃO MAPA MACRO/MICRO ───────────────────────────────────────────────────
 # ── FUNÇÃO MAPA MACRO/MICRO ───────────────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner="Processando municípios...")
 def _processar_geojson_mun(_cache_key, col_grupo):
-    """Retorna (df_coords, df_mun_map) — DataFrames serializáveis pelo cache."""
-    if geojson_mun is None or df_mun_regiao is None:
+    """Retorna (df_coords, df_mun_map) — usa dados pré-computados no carregamento."""
+    df_pre = _df_ibge_macro if col_grupo == "regiao_macro" else _df_ibge_micro
+    if df_pre.empty:
         return pd.DataFrame(), pd.DataFrame()
-    rows_mun, rows_c = [], []
-    for feat in geojson_mun["features"]:
-        _p = feat.get("properties", {})
-        _ibge = str(_p.get("ibge_norm","")).strip().zfill(7)
-        if not _ibge:
-            continue
-        _match = df_mun_regiao[df_mun_regiao["ibge_norm"] == _ibge]
-        _reg = _match.iloc[0][col_grupo] if not _match.empty else None
-        if _reg == "Não Identificado" or (pd.isna(_reg) if _reg is not None else False):
-            _reg = None
-        rows_mun.append({"ibge_norm": _ibge, "regiao": _reg})
-        try:
-            _cf = []
-            def _flat(c):
-                if isinstance(c, list) and len(c) > 0:
-                    if isinstance(c[0], (int,float)): _cf.append(c)
-                    else:
-                        for x in c: _flat(x)
-            _flat(feat.get("geometry",{}).get("coordinates",[]))
-            if _cf and _reg:
-                rows_c.append({"regiao":_reg,
-                                "lat":sum(c[1] for c in _cf)/len(_cf),
-                                "lon":sum(c[0] for c in _cf)/len(_cf)})
-        except Exception:
-            pass
-    df_mun_map = pd.DataFrame(rows_mun) if rows_mun else pd.DataFrame()
-    df_coords  = (pd.DataFrame(rows_c).groupby("regiao")[["lat","lon"]].mean().reset_index()
-                  if rows_c else pd.DataFrame())
-    return df_coords, df_mun_map
+    df_coords = pd.DataFrame()
+    if "lat" in df_pre.columns:
+        df_coords = (df_pre[df_pre["lat"].notna()]
+                     .groupby("regiao")[["lat","lon"]].mean().reset_index())
+    return df_coords, df_pre[["ibge_norm","regiao"]]
 
 def _mapa_regiao(col_grupo, label_nivel, fator_cor=1.0):
     df_reg = _agg(df_cult, col_grupo)
